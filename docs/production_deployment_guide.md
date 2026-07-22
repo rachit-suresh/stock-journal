@@ -44,7 +44,7 @@ TOKENS=3045,2885,11536,1594,3456
 #### Frontend (Vercel Project Environment Variables)
 ```env
 # FastAPI Backend Production URL
-FASTAPI_BACKEND_URL=https://your-stock-journal.onrender.com
+FASTAPI_BACKEND_URL=https://stock-journal-xenm.onrender.com
 ```
 
 ---
@@ -53,13 +53,14 @@ FASTAPI_BACKEND_URL=https://your-stock-journal.onrender.com
 
 Before pushing to production, verify all pre-flight checks:
 
-- [x] **Dependencies Locked**: `requirements.txt` contains `fastapi`, `uvicorn`, `motor`, `pymongo`, `smartapi-python`, `pyotp`, `logzero`, `websocket-client`, `pytest`, `pytest-asyncio`, `httpx`.
+- [x] **Dependencies Cleaned**: `requirements.txt` contains clean production stack (`fastapi`, `uvicorn`, `motor`, `pymongo`, `smartapi-python`, `pyotp`, `websocket-client`, `pytest`, `pytest-asyncio`, `httpx`).
+- [x] **Python Package Initialization**: `__init__.py` markers present in all subpackages in `app/` and `tests/`.
 - [x] **Automated Test Suite**: Run `python -m pytest -v` to ensure 100% test pass rate (18/18 tests passing).
 - [x] **Environment Secrets Ignored**: `.gitignore` configured to exclude `.env`, `.pytest_cache/`, `__pycache__/`, and `.venv/`.
-- [x] **Vercel Schema Compliance**: `vercel.json` strictly adheres to Vercel v2 schema rules (no invalid `"public"` root property).
+- [x] **Vercel API Proxy Rewrites**: `vercel.json` configured with `/api/:path*` proxy rule to forward requests server-side to Render.
 - [x] **CORS Security Enforced**: `CORSMiddleware` in `main.py` uses `ALLOWED_ORIGINS` setting from `app/core/config.py`.
-- [x] **Dynamic Base URL Resolution**: Frontend (`static/state.js`, `static/mockApi.js`, `static/index.html`) automatically resolves `FASTAPI_BACKEND_URL`.
-- [x] **Database Fallback Verification**: MongoDB auto-connects on lifespan startup and seeds default mock trades/strategies/emotions if database collections are empty.
+- [x] **Database Active Ping Validation**: MongoDB connection runs `await client.admin.command('ping')` on startup to verify connectivity.
+- [x] **Server-Side Input Sanitization**: Pydantic models sanitize ticker symbols, validate trade sides, and HTML-escape user notes and categories.
 - [x] **Streamer Thread Fault Isolation**: Background WebSocket streamer runs inside an isolated daemon thread, preventing event loop blocking.
 
 ---
@@ -84,7 +85,7 @@ Before pushing to production, verify all pre-flight checks:
 ### Render Free Tier Behavior & Keep-Alive Strategy
 - **Inactivity Sleep**: Render free Web Services spin down after 15 minutes of zero HTTP traffic.
 - **Trading Hours Activity**: Continuous frontend price polling (`GET /api/prices` every 2.5s) keeps the server active 100% of the time while your browser tab is open.
-- **Optional 24/7 Zero-Sleep Keep-Alive**: Use a free uptime monitoring service like [UptimeRobot](https://uptimerobot.com) to ping `https://your-app.onrender.com/api/prices?tokens=3045` every 10 minutes.
+- **Optional 24/7 Zero-Sleep Keep-Alive**: Use a free uptime monitoring service like [UptimeRobot](https://uptimerobot.com) to ping `https://stock-journal-xenm.onrender.com/api/prices?tokens=3045` every 10 minutes.
 
 ---
 
@@ -94,12 +95,12 @@ Before pushing to production, verify all pre-flight checks:
 2. Click **Import** on `rachit-suresh/stock-journal`.
 3. Configure Project Settings:
    - **Framework Preset**: `Other`
-   - **Root Directory**: `static`
+   - **Root Directory**: `.` (Project Root)
    - **Build Command**: *(Leave Blank / Override: None)*
-   - **Output Directory**: *(Leave Blank / Override: None)*
+   - **Output Directory**: `static`
 4. Environment Variables:
    - **Key**: `FASTAPI_BACKEND_URL`
-   - **Value**: `https://your-stock-journal.onrender.com`
+   - **Value**: `https://stock-journal-xenm.onrender.com`
 5. Click **Deploy**.
 
 ---
@@ -114,14 +115,18 @@ Before pushing to production, verify all pre-flight checks:
   2. Navigate to **Network Access** $\rightarrow$ Click **Add IP Address**.
   3. Enter `0.0.0.0/0` (Allow Access From Anywhere) and confirm.
 
-### Issue 2: Vercel Schema Validation Error (`should NOT have additional property 'public'`)
-- **Symptom**: Vercel deployment fails with `The vercel.json schema validation failed`.
-- **Cause**: Using legacy `"public": true` root property in `vercel.json` v2 files.
-- **Fix**: Ensure `vercel.json` specifies only `cleanUrls` and `rewrites`:
+### Issue 2: Vercel Rewrites for Backend Proxying
+- **Symptom**: Frontend fetch requests to `/api/...` receive 404 HTML responses on Vercel.
+- **Cause**: Vercel static router treating `/api/` as a static folder path.
+- **Fix**: Ensure `vercel.json` includes the backend proxy rewrite rule:
   ```json
   {
     "cleanUrls": true,
     "rewrites": [
+      {
+        "source": "/api/:path*",
+        "destination": "https://stock-journal-xenm.onrender.com/api/:path*"
+      },
       {
         "source": "/(.*)",
         "destination": "/static/$1"
@@ -137,4 +142,3 @@ Before pushing to production, verify all pre-flight checks:
   ```env
   ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:8000
   ```
-

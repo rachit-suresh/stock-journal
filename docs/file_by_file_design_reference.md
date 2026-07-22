@@ -9,37 +9,48 @@ This reference document provides an exhaustive, granular breakdown of every sing
 ```
 stock-journal/
 ├── app/
+│   ├── __init__.py                 # Python package marker
 │   ├── api/
+│   │   ├── __init__.py             # API package marker
 │   │   ├── endpoints/
+│   │   │   ├── __init__.py         # Endpoints package marker
 │   │   │   ├── emotions.py         # Dedicated REST endpoints for emotions CRUD
 │   │   │   ├── journal.py          # Master journal overview, reset, & import fallback router
-│   │   │   ├── prices.py           # Real-time price cache query router
+│   │   │   ├── prices.py           # Real-time price cache query router (with success: True contract)
 │   │   │   ├── strategies.py       # Dedicated REST endpoints for strategies CRUD
 │   │   │   └── trades.py           # Dedicated REST endpoints for trades CRUD
 │   │   └── router.py               # Master APIRouter aggregator
 │   ├── core/
+│   │   ├── __init__.py             # Core package marker
 │   │   ├── config.py               # Centralized Settings & environment parser
-│   │   └── database.py             # Async Motor MongoDB connection manager
+│   │   └── database.py             # Async Motor MongoDB connection manager (with active ping validation)
 │   ├── models/
+│   │   ├── __init__.py             # Models package marker
 │   │   ├── emotion.py              # Pydantic v2 schemas for emotion entities
 │   │   ├── strategy.py             # Pydantic v2 schemas for strategy entities
-│   │   └── trade.py                # Pydantic v2 schemas for trade entities & updates
+│   │   └── trade.py                # Pydantic v2 schemas with field validators & HTML sanitization
 │   ├── repositories/
+│   │   ├── __init__.py             # Repositories package marker
 │   │   ├── interfaces/
+│   │   │   ├── __init__.py         # Interfaces package marker
 │   │   │   ├── emotion_repository.py # Abstract Base Class contract for emotions persistence
 │   │   │   ├── strategy_repository.py# Abstract Base Class contract for strategies persistence
 │   │   │   └── trade_repository.py   # Abstract Base Class contract for trades persistence
 │   │   ├── memory/
+│   │   │   ├── __init__.py         # Memory repos package marker
 │   │   │   ├── emotion_repository.py # In-memory implementation for isolated unit testing
 │   │   │   ├── strategy_repository.py# In-memory implementation for isolated unit testing
 │   │   │   └── trade_repository.py   # In-memory implementation for isolated unit testing
 │   │   └── mongo/
-│   │       ├── emotion_repository.py # Production Async Motor MongoDB emotion store
-│   │       ├── strategy_repository.py# Production Async Motor MongoDB strategy store
-│   │       └── trade_repository.py   # Production Async Motor MongoDB trade store
+│   │       ├── __init__.py         # Mongo repos package marker
+│   │       ├── emotion_repository.py # Async Motor MongoDB emotion store (with re.escape regex security)
+│   │       ├── strategy_repository.py# Async Motor MongoDB strategy store (with re.escape regex security)
+│   │       └── trade_repository.py   # Async Motor MongoDB trade store (with $or ID query matching)
 │   ├── services/
+│   │   ├── __init__.py             # Services package marker
 │   │   └── journal_service.py      # Business logic orchestrator & DB auto-seeding
 │   └── streaming/
+│       ├── __init__.py             # Streaming package marker
 │       ├── angel_one_streamer.py   # Angel One SmartAPI WebSocket 2.0 ticker engine
 │       ├── base_streamer.py        # Abstract IMarketDataStreamer interface
 │       ├── mock_streamer.py        # Mock random-walk market data streamer
@@ -54,17 +65,18 @@ stock-journal/
 │   ├── index.html                  # HTML5 semantic dashboard markup
 │   ├── mockApi.js                  # Frontend market price polling engine
 │   ├── mockData.js                 # Initial seed trade data fixtures
-│   ├── state.js                    # Client StateManager & portfolio metrics calculator
+│   ├── state.js                    # Client StateManager & portfolio metrics calculator (RESTful calls)
 │   └── styles.css                  # Custom CSS styling with dark glassmorphism design system
 ├── tests/
+│   ├── __init__.py                 # Tests package marker
 │   ├── test_api_endpoints.py       # FastAPI HTTP route integration test suite
 │   ├── test_models.py              # Pydantic schema validation test suite
 │   ├── test_price_cache.py         # Multi-threaded price cache concurrency test suite
 │   └── test_repositories.py        # Repository CRUD & soft cascading update test suite
-├── .gitignore                      # Git exclusion rules
+├── .gitignore                      # Git exclusion rules (.env, __pycache__, .pytest_cache)
 ├── main.py                         # FastAPI application entrypoint & Lifespan startup
-├── requirements.txt                # Python package dependency manifest
-└── vercel.json                     # Vercel deployment specification & static route rewrites
+├── requirements.txt                # Python package dependency manifest (logzero cleaned)
+└── vercel.json                     # Vercel deployment specification & /api/* proxy rewrites
 ```
 
 ---
@@ -97,16 +109,16 @@ Parses and validates environment variables using standard Python `os.getenv` def
 
 ### `app/core/database.py`
 
-#### Class `Database`
+#### Class `DatabaseManager`
 Manages the lifecycle of the asynchronous Motor MongoDB client (`AsyncIOMotorClient`).
 
 - **Attributes**:
   - `client` (`Optional[AsyncIOMotorClient]`): Active Motor client instance or `None`.
   - `db` (`Optional[AsyncIOMotorDatabase]`): Target database handle or `None`.
-- **Methods**:
-  - `connect_db() -> None`: Initializes `AsyncIOMotorClient(settings.MONGO_URI)` and assigns `db = client[settings.MONGO_DB_NAME]`. Logs connection success.
-  - `close_db() -> None`: Safely closes the active Motor client connection.
-  - `get_database() -> AsyncIOMotorDatabase`: Returns the active `db` handle. Raises `RuntimeError` if called before `connect_db()`.
+- **Functions**:
+  - `connect_to_mongo() -> None`: Initializes `AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)` and assigns `db = client[settings.MONGO_DB_NAME]`. Executes `await client.admin.command('ping')` to verify live server connectivity before logging success.
+  - `close_mongo_connection() -> None`: Safely closes the active Motor client connection upon shutdown.
+  - `get_database() -> AsyncIOMotorDatabase`: Returns the active `db` handle for FastAPI dependency injection.
 
 ---
 
@@ -115,22 +127,22 @@ Manages the lifecycle of the asynchronous Motor MongoDB client (`AsyncIOMotorCli
 ### `app/models/trade.py`
 
 - **Class `TradeCreate(BaseModel)`**:
-  - `symbol` (`str`): Uppercase ticker symbol (e.g., `"SBIN"`).
-  - `side` (`str`): `"BUY"` or `"SELL"`.
+  - `symbol` (`str`): Uppercase ticker symbol (e.g., `"SBIN"`). Sanitized to uppercase stripped string via `@field_validator("symbol")`.
+  - `side` (`str`): `"BUY"` or `"SELL"`. Validated via `@field_validator("side")`.
   - `price` (`float`): Execution price. Must satisfy `gt=0`.
   - `stopLoss` (`Optional[float]`): Optional stop loss price.
   - `shares` (`int`): Quantity traded. Must satisfy `gt=0`.
   - `pfMatrix` (`Optional[float]`): Portfolio risk/reward score matrix.
   - `rsMatrix` (`Optional[float]`): Relative strength score matrix.
   - `xPercentage` (`Optional[float]`): Position size percentage.
-  - `strategy` (`str`): Tagged strategy name (default: `"Uncategorized"`).
-  - `emotion` (`str`): Tagged emotion mindset (default: `"Neutral"`).
+  - `strategy` (`str`): Tagged strategy name (default: `"Uncategorized"`). Sanitized via `html.escape()`.
+  - `emotion` (`str`): Tagged emotion mindset (default: `"Neutral"`). Sanitized via `html.escape()`.
   - `mistakes` (`List[str]`): List of mistake tags (default: `["None"]`).
-  - `notes` (`Optional[str]`): Trade analysis notes.
+  - `notes` (`Optional[str]`): Trade analysis notes. Sanitized via `html.escape()`.
   - `date` (`Optional[str]`): ISO timestamp generated via `datetime.now(timezone.utc).isoformat()`.
 
 - **Class `TradeUpdate(BaseModel)`**:
-  - All fields made optional to support partial updates (`PATCH`/`PUT`).
+  - All fields made optional to support partial updates (`PUT`). Includes identical `@field_validator` hooks for `symbol`, `side`, and text fields.
 
 - **Class `TradeResponse(TradeCreate)`**:
   - `id` (`str`): Primary string key (maps to MongoDB `_id` string or `custom_id`).
@@ -141,8 +153,6 @@ Manages the lifecycle of the asynchronous Motor MongoDB client (`AsyncIOMotorCli
 
 - **Class `StrategyCreate(BaseModel)`**:
   - `name` (`str`): Strategy identifier. Must satisfy `min_length=1`.
-- **Class `StrategyResponse(BaseModel)`**:
-  - `name` (`str`): Output strategy string.
 
 ---
 
@@ -150,8 +160,6 @@ Manages the lifecycle of the asynchronous Motor MongoDB client (`AsyncIOMotorCli
 
 - **Class `EmotionCreate(BaseModel)`**:
   - `name` (`str`): Emotion identifier. Must satisfy `min_length=1`.
-- **Class `EmotionResponse(BaseModel)`**:
-  - `name` (`str`): Output emotion string.
 
 ---
 
@@ -167,9 +175,9 @@ Manages the lifecycle of the asynchronous Motor MongoDB client (`AsyncIOMotorCli
 
 ### 4.2 MongoDB Motor Implementations (`app/repositories/mongo/`)
 
-- **`MongoTradeRepository`**: Executes async Motor queries against the `trades` collection. Maps `_id` ObjectIds to string `id` fields.
-- **`MongoStrategyRepository`**: Executes async Motor queries against the `strategies` collection. Prevents duplicate category names using case-insensitive `$regex` matching. When a strategy is deleted, executes `update_many` on `trades` setting affected trade strategy attributes to `"Uncategorized"`.
-- **`MongoEmotionRepository`**: Executes async Motor queries against the `emotions` collection. Prevents duplicate category names using case-insensitive `$regex` matching. When an emotion is deleted, executes `update_many` on `trades` setting affected trade emotion attributes to `"Neutral"`.
+- **`MongoTradeRepository`**: Executes async Motor queries against the `trades` collection. Query methods (`get_trade_by_id`, `update_trade`, `delete_trade`) use `$or` conditions matching `_id` (if valid ObjectId) and `custom_id`. Consistently extracts and preserves string `id` attributes.
+- **`MongoStrategyRepository`**: Executes async Motor queries against the `strategies` collection. Uses `re.escape()` on input names inside case-insensitive `$regex` queries to eliminate NoSQL regex injection vulnerabilities. When a strategy is deleted, executes `update_many` on `trades` setting affected strategy attributes to `"Uncategorized"`.
+- **`MongoEmotionRepository`**: Executes async Motor queries against the `emotions` collection. Uses `re.escape()` on input names inside case-insensitive `$regex` queries to eliminate NoSQL regex injection vulnerabilities. When an emotion is deleted, executes `update_many` on `trades` setting affected emotion attributes to `"Neutral"`.
 
 ---
 
@@ -190,12 +198,25 @@ Manages the lifecycle of the asynchronous Motor MongoDB client (`AsyncIOMotorCli
 ## 6. Service & API Layer (`app/services/` & `app/api/`)
 
 - **`JournalService`**: Coordinates business logic and executes initial seed data loading if MongoDB collections are empty on first boot.
-- **`app/api/router.py`**: Aggregates `/api/prices`, `/api/trades`, `/api/strategies`, `/api/emotions`, and `/api/journal` into `api_router`.
-- **`main.py`**: FastAPI entrypoint, lifespan startup manager, static file server, and dynamic `$PORT` environment parser.
+- **`app/api/endpoints/prices.py`**: Returns real-time token price dictionary formatted with `"success": True, "data": {...}, "timestamp": ...`.
+- **`app/api/endpoints/trades.py`**: Dedicated RESTful handlers (`GET /api/trades`, `POST /api/trades`, `GET /api/trades/{id}`, `PUT /api/trades/{id}`, `DELETE /api/trades/{id}`).
+- **`app/api/endpoints/strategies.py`**: Dedicated RESTful handlers (`GET /api/strategies`, `POST /api/strategies`, `DELETE /api/strategies/{name}`).
+- **`app/api/endpoints/emotions.py`**: Dedicated RESTful handlers (`GET /api/emotions`, `POST /api/emotions`, `DELETE /api/emotions/{name}`).
+- **`app/api/endpoints/journal.py`**: Overview, bulk reset, and bulk import endpoints with backwards-compatible fallbacks.
+- **`app/api/router.py`**: Aggregates all endpoint routers into unified `api_router`.
+- **`main.py`**: FastAPI entrypoint, lifespan startup manager, static file server, CORS middleware, and dynamic `$PORT` environment parser.
 
 ---
 
-## 7. Automated Test Suite (`tests/`)
+## 7. Client Frontend Dashboard (`static/`)
+
+- **`static/state.js`**: `StateManager` class handling local state, metric calculations, and asynchronous RESTful API synchronization with backend (`/api/trades`, `/api/strategies`, `/api/emotions`). Free of undefined `notifyTabs()` ghost calls.
+- **`static/app.js`**: DOM UI event listeners, view switcher (`dashboard`, `tradelog`, `strategies`), form submission handlers, and Chart.js equity/allocation chart rendering engine.
+- **`static/mockApi.js`**: Background tick polling engine fetching `/api/prices` every 2.5s and notifying UI listeners.
+
+---
+
+## 8. Automated Test Suite (`tests/`)
 
 - **`tests/test_models.py`**: Validates Pydantic schema validation rules.
 - **`tests/test_price_cache.py`**: Tests thread-safety under multi-threaded concurrent write workloads.
