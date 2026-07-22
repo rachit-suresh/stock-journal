@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Journal & Portfolio Dashboard</title>
+  <!-- Google Fonts & Stylesheets -->
+  <link rel="stylesheet" href="styles.css?v=2.3">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">SJ</div>
+        <span class="brand-name">StockJournal</span>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <div class="nav-item active" data-view="dashboard">
+          <!-- Dashboard SVG -->
+          <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"></path>
+          </svg>
+          Dashboard
+        </div>
+        
+        <div class="nav-item" data-view="tradelog">
+          <!-- Document SVG -->
+          <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"></path>
+          </svg>
+          Trade Log
+        </div>
+        
+        <div class="nav-item" data-view="strategies">
+          <!-- Strategies/Cog SVG -->
+          <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+          </svg>
+          Strategies
+        </div>
+
+        <div class="nav-item" data-view="emotions">
+          <!-- Emotion / Mindset SVG -->
+          <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z"></path>
+          </svg>
+          Emotions
+        </div>
+
+        <div class="nav-item" data-view="analytics">
+          <!-- Analytics SVG -->
+          <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"></path>
+          </svg>
+          Analytics
+        </div>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <button class="btn btn-secondary btn-sm" id="btn-export">
+          <!-- Export/Download Icon -->
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+          </svg>
+          Export Journal
+        </button>
+        <button class="btn btn-secondary btn-sm" id="btn-import">
+          <!-- Import/Upload Icon -->
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path>
+          </svg>
+          Import Journal
+        </button>
+        <button class="btn btn-danger-outline btn-sm" id="btn-reset-mock" style="margin-top: 8px;">
+          <!-- Reset Icon -->
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"></path>
+          </svg>
+          Reset Mock Data
+        </button>
+        <input type="file" id="file-import-input" accept=".json" style="display: none;">
+      </div>
+    </aside>
+    
+    <!-- MAIN CONTENT -->
+    <main class="main-wrapper">
+      
+      <!-- HEADER -->
+      <header class="header">
+        <div class="header-title-section">
+          <h1 id="page-title">Dashboard</h1>
+        </div>
+        
+        <div class="header-controls">
+          <div class="status-badge">
+            <div class="status-dot pulsing"></div>
+            <span>LIVE FEED ACTIVE</span>
+          </div>
+          
+          <button class="btn btn-primary" id="btn-add-trade-trigger">
+            <!-- Plus Icon -->
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path>
+            </svg>
+            Record Trade
+          </button>
+        </div>
+      </header>
+      
+      <!-- BODY -->
+      <div class="content-body">
+        
+        <!-- DASHBOARD VIEW -->
+        <div class="page-view active" id="view-dashboard">
+          
+          <!-- Key Metrics Cards -->
+          <div class="metrics-grid">
+            
+            <div class="card metric-card">
+              <span class="card-title">Net Equity</span>
+              <div>
+                <div class="metric-val" id="metric-equity">$100,000.00</div>
+                <div class="metric-sub">
+                  Total account valuation
+                </div>
+              </div>
+            </div>
+            
+            <div class="card metric-card">
+              <span class="card-title">Realized P&L</span>
+              <div>
+                <div class="metric-val" id="metric-realized-pnl">$0.00</div>
+                <div class="metric-sub" id="metric-profit-factor">
+                  Profit Factor: 1.00
+                </div>
+              </div>
+            </div>
+            
+            <div class="card metric-card">
+              <span class="card-title">Unrealized P&L</span>
+              <div>
+                <div class="metric-val" id="metric-unrealized-pnl">$0.00</div>
+                <div class="metric-sub">
+                  Open market changes
+                </div>
+              </div>
+            </div>
+            
+            <div class="card metric-card">
+              <span class="card-title">Win Rate</span>
+              <div>
+                <div class="metric-val" id="metric-winrate">0.0%</div>
+                <div class="metric-sub" id="metric-win-loss-count">
+                  0 wins / 0 losses
+                </div>
+              </div>
+            </div>
+            
+          </div>
+          
+          <!-- Charts Section -->
+          <div class="charts-grid">
+            <div class="card chart-card-wrapper">
+              <span class="card-title">Equity Growth (Cumulative P&L)</span>
+              <div class="chart-container">
+                <canvas id="equityChart"></canvas>
+              </div>
+            </div>
+            
+            <div class="card chart-card-wrapper">
+              <span class="card-title">Asset Allocation</span>
+              <div class="chart-container">
+                <canvas id="allocationChart"></canvas>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Bottom Row: Positions & Watchlist -->
+          <div class="market-grid">
+            
+            <!-- Open Positions -->
+            <div class="card">
+              <span class="card-title">Active Positions</span>
+              <div class="positions-list" id="positions-container">
+                <div class="text-neutral" style="text-align: center; padding: 20px;">No active positions. Add trades to open.</div>
+              </div>
+            </div>
+            
+            <!-- Watchlist with Tick Updates -->
+            <div class="card">
+              <span class="card-title">Live Watchlist</span>
+              <div class="watchlist-list" id="watchlist-container">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+            
+          </div>
+          
+        </div>
+        
+        <!-- TRADE LOG VIEW -->
+        <div class="page-view" id="view-tradelog">
+          
+          <div class="card">
+            
+            <!-- Filters -->
+            <div class="table-filter-bar">
+              <div class="filter-group">
+                <div class="input-search-wrapper">
+                  <svg class="search-icon-svg" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"></path>
+                  </svg>
+                  <input type="text" class="input-search" id="filter-search" placeholder="Search by Symbol...">
+                </div>
+                
+                <select class="filter-select" id="filter-side">
+                  <option value="">All Actions</option>
+                  <option value="BUY">BUY</option>
+                  <option value="SELL">SELL</option>
+                </select>
+                
+                <select class="filter-select" id="filter-strategy">
+                  <option value="">All Strategies</option>
+                  <!-- Populated dynamically -->
+                </select>
+                
+                <select class="filter-select" id="filter-emotion">
+                  <option value="">All Emotions</option>
+                  <!-- Populated dynamically -->
+                </select>
+              </div>
+              
+              <div style="font-size: 13px; color: var(--text-muted);" id="filter-count">
+                Showing 0 trades
+              </div>
+            </div>
+            
+            <!-- Table -->
+            <div class="table-wrapper">
+              <table class="trade-table" id="trades-table">
+                <thead>
+                  <tr>
+                    <th data-sort="date">Date</th>
+                    <th data-sort="symbol">Symbol</th>
+                    <th data-sort="side">Side</th>
+                    <th data-sort="price">Price</th>
+                    <th data-sort="stopLoss">Stop Loss</th>
+                    <th data-sort="shares">Shares</th>
+                    <th>Value</th>
+                    <th data-sort="strategy">Strategy</th>
+                    <th data-sort="emotion">Emotion</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="trades-table-body">
+                  <!-- Loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
+            
+          </div>
+          
+        </div>
+
+        <!-- STRATEGIES VIEW -->
+        <div class="page-view" id="view-strategies">
+          <div class="card" style="max-width: 700px; margin: 0 auto;">
+            <span class="card-title">Manage Strategy Setup Library</span>
+            
+            <form id="strategy-add-form" style="margin-bottom: 24px; display: flex; gap: 12px; align-items: flex-end;">
+              <div class="form-group" style="flex-grow: 1; margin-bottom: 0;">
+                <label for="strategy-new-name">New Setup Name</label>
+                <input type="text" class="form-input" id="strategy-new-name" placeholder="e.g. Squeeze Breakout, EMA Pullback" required>
+              </div>
+              <button type="submit" class="btn btn-primary" style="height: 42px;">Add Strategy</button>
+            </form>
+
+            <div class="table-wrapper">
+              <table class="trade-table">
+                <thead>
+                  <tr>
+                    <th>Strategy Setup Name</th>
+                    <th style="width: 140px; text-align: right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="strategies-list-tbody">
+                  <!-- Loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- EMOTIONS VIEW -->
+        <div class="page-view" id="view-emotions">
+          <div class="card" style="max-width: 700px; margin: 0 auto;">
+            <span class="card-title">Manage Custom Emotions & Mindset Tags</span>
+            
+            <form id="emotion-add-form" style="margin-bottom: 24px; display: flex; gap: 12px; align-items: flex-end;">
+              <div class="form-group" style="flex-grow: 1; margin-bottom: 0;">
+                <label for="emotion-new-name">New Emotion Tag</label>
+                <input type="text" class="form-input" id="emotion-new-name" placeholder="e.g. Revenge Trading, Indecisive" required>
+              </div>
+              <button type="submit" class="btn btn-primary" style="height: 42px;">Add Emotion</button>
+            </form>
+
+            <div class="table-wrapper">
+              <table class="trade-table">
+                <thead>
+                  <tr>
+                    <th>Emotion / Mindset Tag</th>
+                    <th style="width: 140px; text-align: right;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="emotions-list-tbody">
+                  <!-- Loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        
+        <!-- ANALYTICS VIEW -->
+        <div class="page-view" id="view-analytics">
+          
+          <div class="stats-cards-grid">
+            <div class="card">
+              <div style="color: var(--text-muted); font-size: 13px; font-weight:600; margin-bottom:8px;">Profit Factor</div>
+              <div class="metric-val" id="analytics-profit-factor">1.00</div>
+              <span style="font-size: 12px; color: var(--text-dark);">Gross profits / Gross losses</span>
+            </div>
+            <div class="card">
+              <div style="color: var(--text-muted); font-size: 13px; font-weight:600; margin-bottom:8px;">Average Win</div>
+              <div class="metric-val text-up" id="analytics-avg-win">$0.00</div>
+              <span style="font-size: 12px; color: var(--text-dark);">Mean payoff of green trades</span>
+            </div>
+            <div class="card">
+              <div style="color: var(--text-muted); font-size: 13px; font-weight:600; margin-bottom:8px;">Average Loss</div>
+              <div class="metric-val text-down" id="analytics-avg-loss">$0.00</div>
+              <span style="font-size: 12px; color: var(--text-dark);">Mean payoff of red trades</span>
+            </div>
+            <div class="card">
+              <div style="color: var(--text-muted); font-size: 13px; font-weight:600; margin-bottom:8px;">Closed Trades Count</div>
+              <div class="metric-val" id="analytics-trade-count">0</div>
+              <span style="font-size: 12px; color: var(--text-dark);" id="analytics-winrate-pct">Win Rate: 0%</span>
+            </div>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; gap: 24px;">
+            
+            <!-- Strategy Performance Table -->
+            <div class="card">
+              <span class="card-title">Performance by Strategy</span>
+              <div class="table-wrapper">
+                <table class="breakdown-table trade-table">
+                  <thead>
+                    <tr>
+                      <th>Strategy Setup</th>
+                      <th>Trades</th>
+                      <th>Win Rate</th>
+                      <th>Net Profit</th>
+                      <th>Avg PF Matrix</th>
+                      <th>Avg RS Matrix</th>
+                      <th>Avg X%</th>
+                    </tr>
+                  </thead>
+                  <tbody id="analytics-strategy-tbody">
+                    <!-- Dynamic entries -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <!-- Emotion Performance Table -->
+            <div class="card">
+              <span class="card-title">Performance by Emotion / Mindset</span>
+              <div class="table-wrapper">
+                <table class="breakdown-table trade-table">
+                  <thead>
+                    <tr>
+                      <th>Emotion</th>
+                      <th>Trades</th>
+                      <th>Win Rate</th>
+                      <th>Net Profit</th>
+                      <th>Avg PF Matrix</th>
+                      <th>Avg RS Matrix</th>
+                      <th>Avg X%</th>
+                    </tr>
+                  </thead>
+                  <tbody id="analytics-emotion-tbody">
+                    <!-- Dynamic entries -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+          </div>
+          
+        </div>
+        
+      </div>
+      
+    </main>
+    
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- MODAL: ADD / EDIT TRADE -->
+  <div class="modal-overlay" id="modal-trade">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 id="modal-title">Record Trade</h3>
+        <button class="modal-close" id="modal-trade-close">&times;</button>
+      </div>
+      
+      <form id="trade-form">
+        <input type="hidden" id="form-trade-id">
+        
+        <div class="modal-body">
+          <!-- Row 1: Symbol & Side -->
+          <div class="form-row">
+            <div class="form-group">
+              <label for="form-symbol">Symbol *</label>
+              <input type="text" class="form-input" id="form-symbol" placeholder="e.g. AAPL, BTC" required>
+            </div>
+            <div class="form-group">
+              <label for="form-side">Action *</label>
+              <select class="form-select" id="form-side" required>
+                <option value="BUY">BUY (Long)</option>
+                <option value="SELL">SELL (Short / Trim)</option>
+              </select>
+            </div>
+          </div>
+          
+          <!-- Row 2: Price & Stop Loss -->
+          <div class="form-row">
+            <div class="form-group">
+              <label for="form-price">Execution Price ($) *</label>
+              <input type="number" step="0.01" min="0.001" class="form-input" id="form-price" placeholder="0.00" required>
+            </div>
+            <div class="form-group">
+              <label for="form-stoploss">Stop Loss ($)</label>
+              <input type="number" step="0.01" min="0.001" class="form-input" id="form-stoploss" placeholder="0.00 (Optional)">
+            </div>
+          </div>
+
+          <!-- Row 3: Shares & X Percentage -->
+          <div class="form-row">
+            <div class="form-group">
+              <label for="form-shares">Shares (Qty) *</label>
+              <input type="number" min="1" class="form-input" id="form-shares" placeholder="0" required>
+            </div>
+            <div class="form-group">
+              <label for="form-xpct">X Percentage (%)</label>
+              <input type="number" step="0.01" class="form-input" id="form-xpct" placeholder="0.00 (Optional)">
+            </div>
+          </div>
+
+          <!-- Row 4: PF Matrix & RS Matrix -->
+          <div class="form-row">
+            <div class="form-group">
+              <label for="form-pfmatrix">PF Matrix</label>
+              <input type="number" step="0.01" class="form-input" id="form-pfmatrix" placeholder="e.g. 1.50 (Optional)">
+            </div>
+            <div class="form-group">
+              <label for="form-rsmatrix">RS Matrix</label>
+              <input type="number" step="0.01" class="form-input" id="form-rsmatrix" placeholder="e.g. 1.10 (Optional)">
+            </div>
+          </div>
+          
+          <!-- Row 5: Strategy & Emotion -->
+          <div class="form-row">
+            <div class="form-group">
+              <label for="form-strategy">Strategy Setup</label>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <select class="form-select" id="form-strategy">
+                  <!-- Populated dynamically -->
+                </select>
+                <input type="text" class="form-input" id="form-strategy-custom" placeholder="Type custom strategy..." style="display: none;">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="form-emotion">Mindset / Emotion</label>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <select class="form-select" id="form-emotion">
+                  <!-- Populated dynamically -->
+                </select>
+                <input type="text" class="form-input" id="form-emotion-custom" placeholder="Type custom emotion..." style="display: none;">
+              </div>
+            </div>
+          </div>
+          
+          <!-- Row 6: Date -->
+          <div class="form-group">
+            <label for="form-date">Date & Time</label>
+            <input type="datetime-local" class="form-input" id="form-date">
+          </div>
+          
+          <!-- Mistakes Multi-select (Rendered as styled pills) -->
+          <div class="form-group">
+            <label>Trading Mistakes / Lessons</label>
+            <div class="tag-selection-container" id="mistakes-pills">
+              <span class="pill-option" data-value="None">None</span>
+              <span class="pill-option" data-value="Chased price">Chased price</span>
+              <span class="pill-option" data-value="Ignored stop loss">Ignored stop loss</span>
+              <span class="pill-option" data-value="Exited too early">Exited too early</span>
+              <span class="pill-option" data-value="Held too long">Held too long</span>
+              <span class="pill-option" data-value="Too large sizing">Too large sizing</span>
+            </div>
+          </div>
+          
+          <!-- Notes -->
+          <div class="form-group" style="margin-bottom: 0;">
+            <label for="form-notes">Journal Notes / Analysis</label>
+            <textarea class="form-textarea" id="form-notes" placeholder="Why did you take this trade? What did you do well? What could be improved?"></textarea>
+          </div>
+          
+        </div>
+        
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btn-form-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-form-submit">Save Entry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: VIEW TRADE DETAIL -->
+  <div class="modal-overlay" id="modal-trade-detail">
+    <div class="modal-container" style="max-width: 620px;">
+      <div class="modal-header">
+        <h3 id="detail-modal-title">Trade Details</h3>
+        <button class="modal-close" id="modal-detail-close">&times;</button>
+      </div>
+      
+      <div class="modal-body" style="padding: 24px;">
+        <div class="detail-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; font-size: 14px;">
+          <div><strong style="color: var(--text-muted);">Date & Time:</strong> <span id="detail-date">-</span></div>
+          <div><strong style="color: var(--text-muted);">Asset / Symbol:</strong> <span id="detail-symbol" style="font-weight: 700;">-</span></div>
+          <div><strong style="color: var(--text-muted);">Action:</strong> <span id="detail-side">-</span></div>
+          <div><strong style="color: var(--text-muted);">Execution Price:</strong> <span id="detail-price" class="td-mono">-</span></div>
+          <div><strong style="color: var(--text-muted);">Stop Loss:</strong> <span id="detail-stoploss" class="td-mono">-</span></div>
+          <div><strong style="color: var(--text-muted);">Shares:</strong> <span id="detail-shares" class="td-mono">-</span></div>
+          <div><strong style="color: var(--text-muted);">Total Value:</strong> <span id="detail-value" class="td-mono">-</span></div>
+          <div><strong style="color: var(--text-muted);">Strategy Setup:</strong> <span id="detail-strategy" class="badge badge-strategy">-</span></div>
+          <div><strong style="color: var(--text-muted);">Mindset / Emotion:</strong> <span id="detail-emotion" class="badge badge-emotion">-</span></div>
+          <div><strong style="color: var(--text-muted);">X Percentage:</strong> <span id="detail-xpct" class="td-mono">-</span></div>
+          <div><strong style="color: var(--text-muted);">PF Matrix:</strong> <span id="detail-pfmatrix" class="td-mono">-</span></div>
+          <div><strong style="color: var(--text-muted);">RS Matrix:</strong> <span id="detail-rsmatrix" class="td-mono">-</span></div>
+        </div>
+        
+        <div class="form-group" style="margin-top: 16px;">
+          <label>Trading Mistakes / Lessons</label>
+          <div id="detail-mistakes" style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;">-</div>
+        </div>
+        
+        <div class="form-group" style="margin-top: 20px; margin-bottom: 0;">
+          <label>Journal Notes / Analysis</label>
+          <div id="detail-notes" style="background-color: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 16px; min-height: 100px; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">-</div>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-detail-close">Close</button>
+        <button class="btn btn-secondary" id="btn-detail-delete" style="border-color: rgba(244,63,94,0.3); color: var(--color-danger);">Delete Trade</button>
+        <button class="btn btn-primary" id="btn-detail-edit">Edit Entry</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Application Orchestrator Script -->
+  <script type="module" src="app.js?v=2.3"></script>
+</body>
+</html>
