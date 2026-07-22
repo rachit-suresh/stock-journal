@@ -1,294 +1,203 @@
-# Complete File-by-File, Class-by-Class & Function-by-Function Design Reference
+# File-by-File Design Reference & Code Architecture Guide
 
-This document provides an exhaustive, granular design specification covering **every single file, class, function, method signature, data model, and architectural design decision** across the entire backend application codebase.
-
----
-
-## Table of Contents
-1. [Application Entrypoint (`main.py`)](#1-application-entrypoint-mainpy)
-2. [Core Infrastructure Module (`app/core/`)](#2-core-infrastructure-module-appcore)
-   - [`app/core/config.py`](#appcoreconfigpy)
-   - [`app/core/database.py`](#appcoredatabasepy)
-3. [Domain Models & Schemas (`app/models/`)](#3-domain-models--schemas-appmodels)
-   - [`app/models/trade.py`](#appmodelstradepy)
-   - [`app/models/strategy.py`](#appmodelsstrategypy)
-   - [`app/models/emotion.py`](#appmodelsemotionpy)
-4. [Persistence Layer & Interfaces (`app/repositories/`)](#4-persistence-layer--interfaces-apprepositories)
-   - [Abstract Interfaces (`app/repositories/interfaces/`)](#abstract-interfaces-apprepositoriesinterfaces)
-   - [MongoDB Concrete Implementations (`app/repositories/mongo/`)](#mongodb-concrete-implementations-apprepositoriesmongo)
-5. [Business Logic & Service Layer (`app/services/`)](#5-business-logic--service-layer-appservices)
-   - [`app/services/journal_service.py`](#appservicesjournalservicepy)
-6. [Market Streaming & Real-Time Ingestion (`app/streaming/`)](#6-market-streaming--real-time-ingestion-appstreaming)
-   - [`app/streaming/price_cache.py`](#appstreamingpricecachepy)
-   - [`app/streaming/base_streamer.py`](#appstreamingbasestreamerpy)
-   - [`app/streaming/angel_one_streamer.py`](#appstreamingangelonestreamerpy)
-   - [`app/streaming/mock_streamer.py`](#appstreamingmockstreamerpy)
-7. [API Endpoints & Routing Layer (`app/api/`)](#7-api-endpoints--routing-layer-appapi)
-   - [`app/api/router.py`](#appapirouterpy)
-   - [`app/api/endpoints/prices.py`](#appapiendpointspricespy)
-   - [`app/api/endpoints/trades.py`](#appapiendpointstradespy)
-   - [`app/api/endpoints/strategies.py`](#appapiendpointsstrategiespy)
-   - [`app/api/endpoints/emotions.py`](#appapiendpointsemotionspy)
-   - [`app/api/endpoints/journal.py`](#appapiendpointsjournalpy)
+This reference document provides an exhaustive, granular breakdown of every single file, class, function, parameter signature, return type, and design decision across the entire **Stock Journal** codebase.
 
 ---
 
-## 1. Application Entrypoint (`main.py`)
+## 1. Project Directory Structure
 
-### File Overview
-- **Path**: `main.py`
-- **Purpose**: Serves as the single executable entrypoint for the Uvicorn ASGI server. Assembles the FastAPI application instance, configures CORS middleware, registers lifetime startup/shutdown handlers, mounts the master API router, and static asset file server.
-
-### Detailed Design & Functions
-
-#### `start_streamer_daemon()`
-- **Signature**: `def start_streamer_daemon() -> None`
-- **Design Rationale**: Instantiates and launches the real-time market data streaming subsystem inside a background OS daemon thread (`daemon=True`). Running streamer operations in a separate thread prevents long-running WebSocket blocking calls from halting the asyncio event loop.
-- **Workflow & Exception Policy**:
-  1. Inspects `settings.MOCK_STREAMER` and `settings.has_smart_api_credentials()`.
-  2. If credentials exist and mock mode is `False`, instantiates `AngelOneSmartApiStreamer`. Otherwise, falls back to `MockMarketStreamer`.
-  3. Encloses execution in an infinite `while True` reconnect loop. If a network socket drop or session timeout occurs, catches the exception, logs an error, sleeps for 10 seconds, and automatically reconnects.
-
-#### `lifespan(app: FastAPI)`
-- **Signature**: `@asynccontextmanager async def lifespan(app: FastAPI)`
-- **Design Rationale**: Replaces deprecated FastAPI `@app.on_event("startup")` and `@app.on_event("shutdown")` triggers with a modern, structured async context manager lifecycle handler.
-- **Workflow**:
-  - **Startup**: Invokes `await connect_to_mongo()` to establish Motor MongoDB connection pools, then invokes `start_streamer_daemon()`.
-  - **Yield**: Hands control over to the FastAPI request pipeline.
-  - **Shutdown**: On server stop signal (SIGTERM/SIGINT), gracefully calls `await close_mongo_connection()`.
-
-#### FastAPI Application Setup
-- **Config**: Instantiates `app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION, lifespan=lifespan)`.
-- **CORS Middleware**: Adds `CORSMiddleware` with `allow_origins=["*"]`, enabling smooth integration during development and multi-domain deployments.
-- **Static Mounting**: `app.mount("/", StaticFiles(directory="static", html=True), name="static")` mounted at the root path *after* API routes, ensuring `/api/*` requests take precedence over static HTML files.
+```
+stock-journal/
+├── app/
+│   ├── api/
+│   │   ├── endpoints/
+│   │   │   ├── emotions.py         # Dedicated REST endpoints for emotions CRUD
+│   │   │   ├── journal.py          # Master journal overview, reset, & import fallback router
+│   │   │   ├── prices.py           # Real-time price cache query router
+│   │   │   ├── strategies.py       # Dedicated REST endpoints for strategies CRUD
+│   │   │   └── trades.py           # Dedicated REST endpoints for trades CRUD
+│   │   └── router.py               # Master APIRouter aggregator
+│   ├── core/
+│   │   ├── config.py               # Centralized Settings & environment parser
+│   │   └── database.py             # Async Motor MongoDB connection manager
+│   ├── models/
+│   │   ├── emotion.py              # Pydantic v2 schemas for emotion entities
+│   │   ├── strategy.py             # Pydantic v2 schemas for strategy entities
+│   │   └── trade.py                # Pydantic v2 schemas for trade entities & updates
+│   ├── repositories/
+│   │   ├── interfaces/
+│   │   │   ├── emotion_repository.py # Abstract Base Class contract for emotions persistence
+│   │   │   ├── strategy_repository.py# Abstract Base Class contract for strategies persistence
+│   │   │   └── trade_repository.py   # Abstract Base Class contract for trades persistence
+│   │   ├── memory/
+│   │   │   ├── emotion_repository.py # In-memory implementation for isolated unit testing
+│   │   │   ├── strategy_repository.py# In-memory implementation for isolated unit testing
+│   │   │   └── trade_repository.py   # In-memory implementation for isolated unit testing
+│   │   └── mongo/
+│   │       ├── emotion_repository.py # Production Async Motor MongoDB emotion store
+│   │       ├── strategy_repository.py# Production Async Motor MongoDB strategy store
+│   │       └── trade_repository.py   # Production Async Motor MongoDB trade store
+│   ├── services/
+│   │   └── journal_service.py      # Business logic orchestrator & DB auto-seeding
+│   └── streaming/
+│       ├── angel_one_streamer.py   # Angel One SmartAPI WebSocket 2.0 ticker engine
+│       ├── base_streamer.py        # Abstract IMarketDataStreamer interface
+│       ├── mock_streamer.py        # Mock random-walk market data streamer
+│       └── price_cache.py          # Thread-safe in-memory price storage engine
+├── docs/
+│   ├── architecture.md             # HLD, LLD, Class Diagrams, Sequence Workflows, SOLID proofs
+│   ├── design_decisions_and_tradeoffs.md # Executive design decisions & engineering tradeoffs
+│   ├── file_by_file_design_reference.md  # Detailed reference manual (This document)
+│   └── production_deployment_guide.md   # Deployment guide for Render, Vercel & MongoDB Atlas
+├── static/
+│   ├── app.js                      # DOM Event handlers, Chart.js renderings, & View management
+│   ├── index.html                  # HTML5 semantic dashboard markup
+│   ├── mockApi.js                  # Frontend market price polling engine
+│   ├── mockData.js                 # Initial seed trade data fixtures
+│   ├── state.js                    # Client StateManager & portfolio metrics calculator
+│   └── styles.css                  # Custom CSS styling with dark glassmorphism design system
+├── tests/
+│   ├── test_api_endpoints.py       # FastAPI HTTP route integration test suite
+│   ├── test_models.py              # Pydantic schema validation test suite
+│   ├── test_price_cache.py         # Multi-threaded price cache concurrency test suite
+│   └── test_repositories.py        # Repository CRUD & soft cascading update test suite
+├── .gitignore                      # Git exclusion rules
+├── main.py                         # FastAPI application entrypoint & Lifespan startup
+├── requirements.txt                # Python package dependency manifest
+└── vercel.json                     # Vercel deployment specification & static route rewrites
+```
 
 ---
 
-## 2. Core Infrastructure Module (`app/core/`)
+## 2. Core Configuration & Database Infrastructure Layer (`app/core/`)
 
 ### `app/core/config.py`
 
-#### Purpose
-Centralized environment configuration management using `python-dotenv`. Ensures typed settings without scattering `os.getenv()` calls throughout business logic.
-
 #### Class `Settings`
-- **Fields**:
-  - `PROJECT_NAME`: `str = "Stock Journal Monolith"`
-  - `VERSION`: `str = "2.0.0"`
-  - `API_KEY`: `str` (from `SMART_API_KEY`)
-  - `CLIENT_CODE`: `str` (from `SMART_CLIENT_CODE`)
-  - `PASSWORD`: `str` (from `SMART_PASSWORD`)
-  - `TOTP_SECRET`: `str` (from `SMART_TOTP_SECRET`)
-  - `MOCK_STREAMER`: `bool` (parsed from `MOCK_STREAMER` env var, defaults to `False`)
-  - `TOKENS_STR`: `str` (comma-separated token list, defaults to `"3045,2885,11536,1594,3456"`)
-  - `MONGO_URI`: `str` (defaults to `"mongodb://localhost:27017"`)
-  - `MONGO_DB_NAME`: `str` (defaults to `"stock_journal"`)
+Parses and validates environment variables using standard Python `os.getenv` defaults.
+
+- **Attributes**:
+  - `PROJECT_NAME` (`str`): Application title (`"Stock Journal Monolith"`).
+  - `VERSION` (`str`): Version identifier (`"2.0.0"`).
+  - `API_KEY` (`str`): Angel One SmartAPI key (`SMART_API_KEY`).
+  - `CLIENT_CODE` (`str`): Angel One Client Code (`SMART_CLIENT_CODE`).
+  - `PASSWORD` (`str`): Angel One Trading Password (`SMART_PASSWORD`).
+  - `TOTP_SECRET` (`str`): 2FA TOTP secret (`SMART_TOTP_SECRET`).
+  - `MOCK_STREAMER` (`bool`): Boolean flag enabling mock simulation mode (`MOCK_STREAMER`).
+  - `TOKENS_STR` (`str`): Comma-separated list of NSE tokens to stream (`TOKENS`).
+  - `ALLOWED_ORIGINS_STR` (`str`): Comma-separated CORS whitelist origins (`ALLOWED_ORIGINS`).
+  - `MONGO_URI` (`str`): MongoDB connection string (`MONGO_URI`, default: `mongodb://localhost:27017`).
+  - `MONGO_DB_NAME` (`str`): Target database name (`MONGO_DB_NAME`, default: `stock_journal`).
 - **Methods**:
-  - `get_tokens() -> list[str]`: Splits `TOKENS_STR` by commas, strips whitespace, and returns a clean token array.
-  - `has_smart_api_credentials() -> bool`: Returns `True` if `API_KEY`, `CLIENT_CODE`, `PASSWORD`, and `TOTP_SECRET` are all populated.
+  - `get_tokens() -> List[str]`: Splits `TOKENS_STR` by comma, strips whitespace, and returns cleaned token strings.
+  - `get_allowed_origins() -> List[str]`: Parses `ALLOWED_ORIGINS_STR`. Returns `["*"]` if set to `"*"` or empty; otherwise returns split domain whitelist.
+  - `has_smart_api_credentials() -> bool`: Returns `True` only if `API_KEY`, `CLIENT_CODE`, `PASSWORD`, and `TOTP_SECRET` are all non-empty strings.
 
 ---
 
 ### `app/core/database.py`
 
-#### Purpose
-Manages the singleton `AsyncIOMotorClient` instance and MongoDB database reference using Motor (official async driver for MongoDB).
+#### Class `Database`
+Manages the lifecycle of the asynchronous Motor MongoDB client (`AsyncIOMotorClient`).
 
-#### Class `DatabaseManager`
-- **Attributes**: `client: AsyncIOMotorClient`, `db: AsyncIOMotorDatabase`.
-
-#### Functions
-- `connect_to_mongo() -> None`: Asynchronously initializes `AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=2000)` and selects database `settings.MONGO_DB_NAME`.
-- `close_mongo_connection() -> None`: Closes open MongoDB socket pools cleanly during application shutdown.
-- `get_database() -> AsyncIOMotorDatabase`: Returns `db_manager.db` for FastAPI Dependency Injection (`Depends(get_database)`).
+- **Attributes**:
+  - `client` (`Optional[AsyncIOMotorClient]`): Active Motor client instance or `None`.
+  - `db` (`Optional[AsyncIOMotorDatabase]`): Target database handle or `None`.
+- **Methods**:
+  - `connect_db() -> None`: Initializes `AsyncIOMotorClient(settings.MONGO_URI)` and assigns `db = client[settings.MONGO_DB_NAME]`. Logs connection success.
+  - `close_db() -> None`: Safely closes the active Motor client connection.
+  - `get_database() -> AsyncIOMotorDatabase`: Returns the active `db` handle. Raises `RuntimeError` if called before `connect_db()`.
 
 ---
 
-## 3. Domain Models & Schemas (`app/models/`)
+## 3. Pydantic Domain Model Layer (`app/models/`)
 
 ### `app/models/trade.py`
 
-#### Pydantic Schemas for Trade Domain
+- **Class `TradeCreate(BaseModel)`**:
+  - `symbol` (`str`): Uppercase ticker symbol (e.g., `"SBIN"`).
+  - `side` (`str`): `"BUY"` or `"SELL"`.
+  - `price` (`float`): Execution price. Must satisfy `gt=0`.
+  - `stopLoss` (`Optional[float]`): Optional stop loss price.
+  - `shares` (`int`): Quantity traded. Must satisfy `gt=0`.
+  - `pfMatrix` (`Optional[float]`): Portfolio risk/reward score matrix.
+  - `rsMatrix` (`Optional[float]`): Relative strength score matrix.
+  - `xPercentage` (`Optional[float]`): Position size percentage.
+  - `strategy` (`str`): Tagged strategy name (default: `"Uncategorized"`).
+  - `emotion` (`str`): Tagged emotion mindset (default: `"Neutral"`).
+  - `mistakes` (`List[str]`): List of mistake tags (default: `["None"]`).
+  - `notes` (`Optional[str]`): Trade analysis notes.
+  - `date` (`Optional[str]`): ISO timestamp generated via `datetime.now(timezone.utc).isoformat()`.
 
-1. **`TradeCreate(BaseModel)`**:
-   - `symbol: str` (Required, e.g. `"SBIN"`)
-   - `side: str` (Required, `"BUY"` or `"SELL"`)
-   - `price: float` (Required, `gt=0`)
-   - `stopLoss: Optional[float]` (Optional level)
-   - `shares: int` (Required, `gt=0`)
-   - `pfMatrix: Optional[float]` (Optional profit factor ratio)
-   - `rsMatrix: Optional[float]` (Optional relative strength ratio)
-   - `xPercentage: Optional[float]` (Optional risk allocation %)
-   - `strategy: str` (Default `"Uncategorized"`)
-   - `emotion: str` (Default `"Neutral"`)
-   - `mistakes: List[str]` (Default `["None"]`)
-   - `notes: Optional[str]` (Default `""`)
-   - `date: Optional[str]` (Default ISO string timestamp)
+- **Class `TradeUpdate(BaseModel)`**:
+  - All fields made optional to support partial updates (`PATCH`/`PUT`).
 
-2. **`TradeUpdate(BaseModel)`**:
-   - Mirrors fields of `TradeCreate` with all fields marked `Optional`, allowing partial updates via HTTP `PUT` requests.
-
-3. **`TradeResponse(TradeCreate)`**:
-   - `id: str = Field(..., alias="id")`
-   - Maps internal MongoDB `_id` / `custom_id` strings cleanly for JSON responses.
+- **Class `TradeResponse(TradeCreate)`**:
+  - `id` (`str`): Primary string key (maps to MongoDB `_id` string or `custom_id`).
 
 ---
 
-### `app/models/strategy.py` & `app/models/emotion.py`
+### `app/models/strategy.py`
 
-#### `StrategyCreate` & `StrategyResponse`
-- `StrategyCreate`: `name: str` (Validation: `min_length=1`).
-- `StrategyResponse`: Inherits `StrategyCreate`, includes `id: str`.
-
-#### `EmotionCreate` & `EmotionResponse`
-- `EmotionCreate`: `name: str` (Validation: `min_length=1`).
-- `EmotionResponse`: Inherits `EmotionCreate`, includes `id: str`.
+- **Class `StrategyCreate(BaseModel)`**:
+  - `name` (`str`): Strategy identifier. Must satisfy `min_length=1`.
+- **Class `StrategyResponse(BaseModel)`**:
+  - `name` (`str`): Output strategy string.
 
 ---
 
-## 4. Persistence Layer & Interfaces (`app/repositories/`)
+### `app/models/emotion.py`
 
-### Abstract Interfaces (`app/repositories/interfaces/`)
-
-Using Python's `abc.ABC` module, these files enforce **Dependency Inversion (DIP)**.
-
-#### 1. `ITradeRepository` (`app/repositories/interfaces/trade_repository.py`)
-- `async def get_all_trades(self) -> List[dict]`
-- `async def get_trade_by_id(self, trade_id: str) -> Optional[dict]`
-- `async def create_trade(self, trade: dict) -> dict`
-- `async def update_trade(self, trade_id: str, trade_update: dict) -> Optional[dict]`
-- `async def delete_trade(self, trade_id: str) -> bool`
-- `async def reset_trades(self, trades: List[dict]) -> None`
-
-#### 2. `IStrategyRepository` (`app/repositories/interfaces/strategy_repository.py`)
-- `async def get_all_strategies(self) -> List[str]`
-- `async def add_strategy(self, name: str) -> bool`
-- `async def delete_strategy(self, name: str) -> bool`
-- `async def reset_strategies(self, strategies: List[str]) -> None`
-
-#### 3. `IEmotionRepository` (`app/repositories/interfaces/emotion_repository.py`)
-- `async def get_all_emotions(self) -> List[str]`
-- `async def add_emotion(self, name: str) -> bool`
-- `async def delete_emotion(self, name: str) -> bool`
-- `async def reset_emotions(self, emotions: List[str]) -> None`
+- **Class `EmotionCreate(BaseModel)`**:
+  - `name` (`str`): Emotion identifier. Must satisfy `min_length=1`.
+- **Class `EmotionResponse(BaseModel)`**:
+  - `name` (`str`): Output emotion string.
 
 ---
 
-### MongoDB Concrete Implementations (`app/repositories/mongo/`)
+## 4. Repository Abstraction Layer (`app/repositories/`)
 
-#### Class `MongoTradeRepository(ITradeRepository)`
-- **Collection**: `db["trades"]`
-- **Method Logic**:
-  - `get_all_trades()`: Queries `find({})`, converts MongoDB `_id` `ObjectId` to `str`, returns document list.
-  - `get_trade_by_id(trade_id)`: Checks if `trade_id` is valid `ObjectId` or custom string, returns matched document.
-  - `create_trade(trade)`: Inserts document into MongoDB `trades` collection.
-  - `update_trade(trade_id, trade_update)`: Executes `$set` query for non-None fields.
-  - `delete_trade(trade_id)`: Performs `delete_one`.
-  - `reset_trades(trades)`: Empties `trades` collection via `delete_many({})` and bulk inserts new items via `insert_many`.
+### 4.1 Interface Contracts (`app/repositories/interfaces/`)
 
-#### Class `MongoStrategyRepository(IStrategyRepository)`
-- **Collection**: `db["strategies"]` and `db["trades"]`
-- **Method Logic**:
-  - `add_strategy(name)`: Case-insensitive `$regex` check to prevent duplicates.
-  - `delete_strategy(name)`: Removes strategy document, then invokes `update_many` on `trades` collection to automatically reassign linked trades to `"Uncategorized"`.
-
-#### Class `MongoEmotionRepository(IEmotionRepository)`
-- **Collection**: `db["emotions"]` and `db["trades"]`
-- **Method Logic**:
-  - `add_emotion(name)`: Case-insensitive `$regex` check to prevent duplicates.
-  - `delete_emotion(name)`: Removes emotion document, then invokes `update_many` on `trades` collection to automatically reassign linked trades to `"Neutral"`.
+- **`ITradeRepository(ABC)`**: Defines `get_all_trades()`, `get_trade_by_id(id)`, `create_trade(trade)`, `update_trade(id, update)`, `delete_trade(id)`, `reset_trades(trades)`.
+- **`IStrategyRepository(ABC)`**: Defines `get_all_strategies()`, `add_strategy(name)`, `delete_strategy(name)`, `reset_strategies(strategies)`.
+- **`IEmotionRepository(ABC)`**: Defines `get_all_emotions()`, `add_emotion(name)`, `delete_emotion(name)`, `reset_emotions(emotions)`.
 
 ---
 
-## 5. Business Logic & Service Layer (`app/services/`)
+### 4.2 MongoDB Motor Implementations (`app/repositories/mongo/`)
 
-### `app/services/journal_service.py`
-
-#### Purpose
-Orchestrates business logic workflows and first-time data seeding. Depends strictly on repository interfaces (`ITradeRepository`, `IStrategyRepository`, `IEmotionRepository`), achieving true decoupled application design.
-
-#### Key Methods
-- `seed_if_empty()`: Asynchronously checks if collections are empty. If empty, seeds initial default strategies (`Breakout`, `Pullback Support`, etc.), default emotions (`Disciplined`, `Confident`, etc.), and 9 sample trade records.
-- `get_journal_overview() -> Dict[str, Any]`: Calls `seed_if_empty()`, then gathers all trades, strategies, and emotions in a unified dictionary payload.
-- `add_trade()`, `update_trade()`, `delete_trade()`, `add_strategy()`, `delete_strategy()`, `add_emotion()`, `delete_emotion()`: Delegates CRUD calls to injected interface instances.
-- `reset_to_mock()`: Re-populates initial sample dataset across all collections.
+- **`MongoTradeRepository`**: Executes async Motor queries against the `trades` collection. Maps `_id` ObjectIds to string `id` fields.
+- **`MongoStrategyRepository`**: Executes async Motor queries against the `strategies` collection. Prevents duplicate category names using case-insensitive `$regex` matching. When a strategy is deleted, executes `update_many` on `trades` setting affected trade strategy attributes to `"Uncategorized"`.
+- **`MongoEmotionRepository`**: Executes async Motor queries against the `emotions` collection. Prevents duplicate category names using case-insensitive `$regex` matching. When an emotion is deleted, executes `update_many` on `trades` setting affected trade emotion attributes to `"Neutral"`.
 
 ---
 
-## 6. Market Streaming & Real-Time Ingestion (`app/streaming/`)
+### 4.3 In-Memory Testing Implementations (`app/repositories/memory/`)
 
-### `app/streaming/price_cache.py`
-
-#### Class `PriceCache`
-- **Thread Safety**: Encapsulates `_prices: Dict[str, float]` behind `threading.Lock()`.
-- **Methods**:
-  - `set_price(token: str, ltp: float)`: Updates tick price safely under lock.
-  - `get_price(token: str, default: float = 100.0) -> float`: Reads single tick price.
-  - `get_batch_prices(tokens: list[str]) -> Dict[str, float]`: Reads batch tick prices in a single locked block.
+- **`MemoryTradeRepository`**, **`MemoryStrategyRepository`**, **`MemoryEmotionRepository`**: Pure Python memory implementations used by pytest to run lightning-fast integration tests without requiring an active MongoDB database.
 
 ---
 
-### `app/streaming/base_streamer.py`
+## 5. Streaming Subsystem (`app/streaming/`)
 
-#### Interface `IMarketDataStreamer(ABC)`
-- `abstractmethod def authenticate(self) -> bool`
-- `abstractmethod def connect_and_stream(self, tokens: list[str]) -> None`
-- `abstractmethod def on_tick_received(self, token: str, ltp: float) -> None`
-
----
-
-### `app/streaming/angel_one_streamer.py`
-
-#### Class `AngelOneSmartApiStreamer(IMarketDataStreamer)`
-- **Authentication**: Uses `SmartConnect` and `pyotp.TOTP` to generate session JWT token and feed token.
-- **Tick Stream Parsing**: Initializes `SmartWebSocketV2`. When binary WebSocket ticks arrive in `on_data`, parses `last_traded_price`, divides integer paise by `100.0` to yield Rupees, and calls `price_cache.set_price(token, ltp)`.
+- **`PriceCache`**: Thread-safe memory cache. `set_price(token, price)` locks `threading.Lock()` to write price; `get_batch_prices(tokens)` locks to fetch batch prices in nanoseconds.
+- **`AngelOneSmartApiStreamer`**: Connects to Angel One WebSocket 2.0 using TOTP authentication, parses binary ticks, converts integer paise to Rupees (`ltp / 100.0`), and writes updates to `PriceCache`.
+- **`MockMarketStreamer`**: Simulates real-time stock price movements using a random-walk algorithm ($\pm 0.4\%$) for Indian equity tokens (`3045`, `2885`, `11536`, `1594`, `3456`).
 
 ---
 
-### `app/streaming/mock_streamer.py`
+## 6. Service & API Layer (`app/services/` & `app/api/`)
 
-#### Class `MockMarketStreamer(IMarketDataStreamer)`
-- **Simulation Engine**: Generates continuous realistic random-walk price fluctuations ($\pm 0.4\%$) for Indian equity tokens (`3045`, `2885`, `11536`, `1594`, `3456`) every 2 seconds, updating `price_cache`.
-
----
-
-## 7. API Endpoints & Routing Layer (`app/api/`)
-
-### Router Aggregator (`app/api/router.py`)
-- Assembles all endpoint routers into `api_router`:
-  - `prices.router` (`/api/prices`)
-  - `trades.router` (`/api/trades`)
-  - `strategies.router` (`/api/strategies`)
-  - `emotions.router` (`/api/emotions`)
-  - `journal.router` (`/api/journal`)
-
-### Endpoint Files
-- **`prices.py`**: `GET /api/prices` returns live batch prices from `price_cache`.
-- **`trades.py`**: Dedicated REST CRUD for `/api/trades`. Uses `TradeCreate` and `TradeUpdate` Pydantic models.
-- **`strategies.py`**: Dedicated REST CRUD for `/api/strategies` (`GET`, `POST`, `DELETE /{name}`).
-- **`emotions.py`**: Dedicated REST CRUD for `/api/emotions` (`GET`, `POST`, `DELETE /{name}`).
-- **`journal.py`**: Aggregated overview (`GET /api/journal`), bulk actions (`/journal/reset`, `/journal/import`), and backward-compatible query-param fallback.
+- **`JournalService`**: Coordinates business logic and executes initial seed data loading if MongoDB collections are empty on first boot.
+- **`app/api/router.py`**: Aggregates `/api/prices`, `/api/trades`, `/api/strategies`, `/api/emotions`, and `/api/journal` into `api_router`.
+- **`main.py`**: FastAPI entrypoint, lifespan startup manager, static file server, and dynamic `$PORT` environment parser.
 
 ---
 
-## 8. Deployment Configuration Files & Infrastructure Assets
+## 7. Automated Test Suite (`tests/`)
 
-### `vercel.json`
-- **Purpose**: Vercel deployment specification complying strictly with Vercel v2 schema rules.
-- **Rules**: Defines `cleanUrls: true` and rewrites all incoming routes (`/(.*)`) to the `/static/$1` asset directory.
-
-### `main.py`
-- **Purpose**: Master FastAPI entrypoint and lifespan context manager.
-- **Functionality**:
-  - Initializes `AsyncIOMotorClient` connection on startup.
-  - Spawns background market streamer daemon thread (`start_streamer_daemon`).
-  - Configures `CORSMiddleware` using `settings.get_allowed_origins()`.
-  - Mounts `api_router` and static asset UI directory.
-  - Automatically parses environment `PORT` when executed directly via `python main.py`.
-
-### `static/index.html` & `static/state.js` & `static/mockApi.js`
-- **Purpose**: Dynamic frontend dashboard scripts and asset views.
-- **Functionality**:
-  - Dynamically resolves `FASTAPI_BACKEND_URL` environment variables.
-  - Provides offline LocalStorage fallbacks if the backend is unreachable.
-
+- **`tests/test_models.py`**: Validates Pydantic schema validation rules.
+- **`tests/test_price_cache.py`**: Tests thread-safety under multi-threaded concurrent write workloads.
+- **`tests/test_repositories.py`**: Tests CRUD operations and cascading trade updates upon category deletion.
+- **`tests/test_api_endpoints.py`**: Integration tests across all FastAPI HTTP endpoints using `TestClient`. Run via `python -m pytest -v`.

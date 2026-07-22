@@ -101,3 +101,40 @@ Before pushing to production, verify all pre-flight checks:
    - **Key**: `FASTAPI_BACKEND_URL`
    - **Value**: `https://your-stock-journal.onrender.com`
 5. Click **Deploy**.
+
+---
+
+## 5. Troubleshooting & Common Deployment Pitfalls
+
+### Issue 1: `ServerSelectionTimeoutError` / MongoDB Connection Failure
+- **Symptom**: Render server logs show `ServerSelectionTimeoutError: No servers found yet`.
+- **Cause**: MongoDB Atlas Network Access IP Whitelist is blocking outbound connections from Render.
+- **Fix**:
+  1. Log into [MongoDB Atlas](https://www.mongodb.com/cloud/atlas).
+  2. Navigate to **Network Access** $\rightarrow$ Click **Add IP Address**.
+  3. Enter `0.0.0.0/0` (Allow Access From Anywhere) and confirm.
+
+### Issue 2: Vercel Schema Validation Error (`should NOT have additional property 'public'`)
+- **Symptom**: Vercel deployment fails with `The vercel.json schema validation failed`.
+- **Cause**: Using legacy `"public": true` root property in `vercel.json` v2 files.
+- **Fix**: Ensure `vercel.json` specifies only `cleanUrls` and `rewrites`:
+  ```json
+  {
+    "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "/(.*)",
+        "destination": "/static/$1"
+      }
+    ]
+  }
+  ```
+
+### Issue 3: CORS Blocking Frontend AJAX Requests
+- **Symptom**: Browser console displays `Access to fetch at ... from origin ... has been blocked by CORS policy`.
+- **Cause**: Render backend CORS configuration does not include your Vercel domain.
+- **Fix**: Set `ALLOWED_ORIGINS` in Render Environment Variables:
+  ```env
+  ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:8000
+  ```
+
