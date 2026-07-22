@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Stock Journal & Portfolio Dashboard</title>
   <script>
-    // Reads from injected environment variable config (e.g. FASTAPI_BACKEND_URL) or defaults to relative path
-    window.FASTAPI_BACKEND_URL = window.FASTAPI_BACKEND_URL || window.API_BASE_URL || "";
+    // Configurable FastAPI backend URL for decoupled Vercel deployment
+    window.FASTAPI_BACKEND_URL = window.FASTAPI_BACKEND_URL || "https://stock-journal-xenm.onrender.com";
   </script>
   <!-- Google Fonts & Stylesheets -->
   <link rel="stylesheet" href="styles.css?v=2.3">

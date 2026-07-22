@@ -2,10 +2,6 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "https://stock-journal-xenm.onrender.com/api/:path*"
-    },
-    {
       "source": "/(.*)",
       "destination": "/static/$1"
     }
