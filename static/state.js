@@ -9,7 +9,37 @@ class StateManager {
     this.emotions = [];
     this.startingBalance = 100000;
     this.onLoadCallback = null;
+    
+    // Multi-tab synchronization channel
+    try {
+      this.syncChannel = new BroadcastChannel('stock_journal_sync_channel');
+      this.syncChannel.onmessage = (event) => {
+        if (event.data === 'state_changed') {
+          this.loadState();
+        }
+      };
+    } catch(e) {
+      this.syncChannel = null;
+    }
+
     this.loadState();
+    this.startAutoSync();
+  }
+
+  // Auto-sync poll every 5s from MongoDB backend for real-time multi-tab consistency
+  startAutoSync() {
+    if (this.syncInterval) return;
+    this.syncInterval = setInterval(() => {
+      this.loadState(true); // silent reload
+    }, 5000);
+  }
+
+  notifyTabs() {
+    if (this.syncChannel) {
+      try {
+        this.syncChannel.postMessage('state_changed');
+      } catch(e) {}
+    }
   }
 
   // Register a callback to update UI when async data is loaded
@@ -83,6 +113,7 @@ class StateManager {
     if (exists) return false;
 
     this.strategies.push(cleanName);
+    this.notifyTabs();
     
     // Asynchronous backend push
     fetch(`${getBaseUrl()}/api/journal?type=strategy`, {
@@ -103,6 +134,7 @@ class StateManager {
     if (index !== -1) {
       const actualName = this.strategies[index];
       this.strategies.splice(index, 1);
+      this.notifyTabs();
       
       // Asynchronous backend push
       fetch(`${getBaseUrl()}/api/journal?type=strategy&name=${actualName}`, {
@@ -213,6 +245,7 @@ class StateManager {
     // Add locally immediately for snappy UI
     this.trades.push(newTrade);
     this.syncTrades(this.trades);
+    this.notifyTabs();
 
     // Asynchronous backend sync
     fetch(`${getBaseUrl()}/api/journal`, {
@@ -228,6 +261,7 @@ class StateManager {
         if (idx !== -1) {
           this.trades[idx].id = json.data.id;
           this.syncTrades(this.trades);
+          this.notifyTabs();
         }
       }
     })
@@ -256,6 +290,7 @@ class StateManager {
     // Update locally
     this.trades[index] = updated;
     this.syncTrades(this.trades);
+    this.notifyTabs();
 
     // Asynchronous backend edit
     fetch(`${getBaseUrl()}/api/journal?id=${id}`, {
@@ -272,6 +307,7 @@ class StateManager {
     if (index !== -1) {
       this.trades.splice(index, 1);
       this.syncTrades(this.trades);
+      this.notifyTabs();
 
       // Asynchronous backend deletion
       fetch(`${getBaseUrl()}/api/journal?id=${id}`, {
