@@ -268,3 +268,27 @@ Orchestrates business logic workflows and first-time data seeding. Depends stric
 - **`strategies.py`**: Dedicated REST CRUD for `/api/strategies` (`GET`, `POST`, `DELETE /{name}`).
 - **`emotions.py`**: Dedicated REST CRUD for `/api/emotions` (`GET`, `POST`, `DELETE /{name}`).
 - **`journal.py`**: Aggregated overview (`GET /api/journal`), bulk actions (`/journal/reset`, `/journal/import`), and backward-compatible query-param fallback.
+
+---
+
+## 8. Deployment Configuration Files & Infrastructure Assets
+
+### `vercel.json`
+- **Purpose**: Vercel deployment specification complying strictly with Vercel v2 schema rules.
+- **Rules**: Defines `cleanUrls: true` and rewrites all incoming routes (`/(.*)`) to the `/static/$1` asset directory.
+
+### `main.py`
+- **Purpose**: Master FastAPI entrypoint and lifespan context manager.
+- **Functionality**:
+  - Initializes `AsyncIOMotorClient` connection on startup.
+  - Spawns background market streamer daemon thread (`start_streamer_daemon`).
+  - Configures `CORSMiddleware` using `settings.get_allowed_origins()`.
+  - Mounts `api_router` and static asset UI directory.
+  - Automatically parses environment `PORT` when executed directly via `python main.py`.
+
+### `static/index.html` & `static/state.js` & `static/mockApi.js`
+- **Purpose**: Dynamic frontend dashboard scripts and asset views.
+- **Functionality**:
+  - Dynamically resolves `FASTAPI_BACKEND_URL` environment variables.
+  - Provides offline LocalStorage fallbacks if the backend is unreachable.
+

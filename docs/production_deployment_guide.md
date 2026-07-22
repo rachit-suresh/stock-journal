@@ -1,6 +1,6 @@
 # Production Deployment & Setup Guide
 
-This guide details everything required to configure, test, and deploy the Stock Journal monolithic application to cloud platforms (Render, Railway, Fly.io, Vercel, or VPS).
+This guide details everything required to configure, test, and deploy the Stock Journal application to production cloud platforms (**Render** for the Python FastAPI Monolith Backend & Streamer, and **Vercel** for the Static UI Dashboard).
 
 ---
 
@@ -19,31 +19,32 @@ The application is engineered to handle this scenario out-of-the-box:
 
 ### Environment Variables Matrix
 
+#### Backend (Render Web Service Environment Variables)
 ```env
-# ==============================================================================
-# DATABASE CONFIGURATION (MongoDB)
-# ==============================================================================
-# Local MongoDB:
-MONGO_URI=mongodb://localhost:27017
-
-# Cloud MongoDB Atlas Cluster (Recommended for Production):
-# MONGO_URI=mongodb+srv://<username>:<password>@cluster0.xxx.mongodb.net/stock_journal?retryWrites=true&w=majority
-
+# Database Settings (MongoDB Atlas Cloud Cluster)
+MONGO_URI=mongodb+srv://<username>:<password>@cluster0.xxx.mongodb.net/stock_journal?retryWrites=true&w=majority
 MONGO_DB_NAME=stock_journal
 
-# ==============================================================================
-# BROKER MARKET DATA CONFIGURATION (Angel One SmartAPI)
-# ==============================================================================
+# CORS Security (Restrict API calls to Vercel and Localhost)
+ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:8000
+
+# Angel One SmartAPI Credentials (Optional: Leave blank to auto-run in MOCK mode)
 SMART_API_KEY=your_angel_one_api_key
 SMART_CLIENT_CODE=your_client_code
 SMART_PASSWORD=your_trading_password
 SMART_TOTP_SECRET=your_2fa_totp_secret_key
 
-# Set to true for initial deployment before obtaining live API keys
+# Streamer Mode (Set to true for initial deployment before obtaining live API keys)
 MOCK_STREAMER=true
 
 # Instrument Tokens to Stream (NSE Equities: 3045=SBIN, 2885=PNB, 11536=TCS, 1594=INFY, 3456=WIPRO)
 TOKENS=3045,2885,11536,1594,3456
+```
+
+#### Frontend (Vercel Project Environment Variables)
+```env
+# FastAPI Backend Production URL
+FASTAPI_BACKEND_URL=https://your-stock-journal.onrender.com
 ```
 
 ---
@@ -55,13 +56,15 @@ Before pushing to production, verify all pre-flight checks:
 - [x] **Dependencies Locked**: `requirements.txt` contains `fastapi`, `uvicorn`, `motor`, `pymongo`, `smartapi-python`, `pyotp`, `logzero`, `websocket-client`, `pytest`, `pytest-asyncio`, `httpx`.
 - [x] **Automated Test Suite**: Run `python -m pytest -v` to ensure 100% test pass rate (18/18 tests passing).
 - [x] **Environment Secrets Ignored**: `.gitignore` configured to exclude `.env`, `.pytest_cache/`, `__pycache__/`, and `.venv/`.
+- [x] **Vercel Schema Compliance**: `vercel.json` strictly adheres to Vercel v2 schema rules (no invalid `"public"` root property).
+- [x] **CORS Security Enforced**: `CORSMiddleware` in `main.py` uses `ALLOWED_ORIGINS` setting from `app/core/config.py`.
+- [x] **Dynamic Base URL Resolution**: Frontend (`static/state.js`, `static/mockApi.js`, `static/index.html`) automatically resolves `FASTAPI_BACKEND_URL`.
 - [x] **Database Fallback Verification**: MongoDB auto-connects on lifespan startup and seeds default mock trades/strategies/emotions if database collections are empty.
 - [x] **Streamer Thread Fault Isolation**: Background WebSocket streamer runs inside an isolated daemon thread, preventing event loop blocking.
-- [x] **CORS & Static Assets**: Static UI assets (`static/`) mounted at `/`, allowing direct web dashboard access on port `$PORT`.
 
 ---
 
-## 3. Render Deployment Instructions (Recommended Monolith Platform)
+## 3. Render Deployment Instructions (Backend & Streamer)
 
 1. Connect your GitHub repository to [Render](https://render.com).
 2. Create a new **Web Service**.
@@ -74,19 +77,27 @@ Before pushing to production, verify all pre-flight checks:
    ```bash
    uvicorn main:app --host 0.0.0.0 --port $PORT
    ```
+   *(Note: Render automatically injects `$PORT` behind the scenes).*
 6. **Environment Variables**:
-   Add `MONGO_URI`, `MONGO_DB_NAME`, `MOCK_STREAMER=true` (or live SmartAPI keys when available).
+   Add `MONGO_URI`, `MONGO_DB_NAME`, `ALLOWED_ORIGINS`, `MOCK_STREAMER=true` (or live SmartAPI keys when available).
+
+### Render Free Tier Behavior & Keep-Alive Strategy
+- **Inactivity Sleep**: Render free Web Services spin down after 15 minutes of zero HTTP traffic.
+- **Trading Hours Activity**: Continuous frontend price polling (`GET /api/prices` every 2.5s) keeps the server active 100% of the time while your browser tab is open.
+- **Optional 24/7 Zero-Sleep Keep-Alive**: Use a free uptime monitoring service like [UptimeRobot](https://uptimerobot.com) to ping `https://your-app.onrender.com/api/prices?tokens=3045` every 10 minutes.
 
 ---
 
-## 4. Running Automated Tests Locally
+## 4. Vercel Deployment Instructions (Static Frontend UI)
 
-```bash
-python -m pytest -v
-```
-
-All 18 unit and integration tests execute using isolation mocks and in-memory test repositories:
-- `tests/test_models.py` (Pydantic field constraints & types)
-- `tests/test_price_cache.py` (Multi-thread concurrent write safety)
-- `tests/test_repositories.py` (CRUD operations & cascading category deletion updates)
-- `tests/test_api_endpoints.py` (FastAPI REST endpoints & OpenAPI schema verification)
+1. Connect your GitHub repository to [Vercel](https://vercel.com).
+2. Click **Import** on `rachit-suresh/stock-journal`.
+3. Configure Project Settings:
+   - **Framework Preset**: `Other`
+   - **Root Directory**: `static`
+   - **Build Command**: *(Leave Blank / Override: None)*
+   - **Output Directory**: *(Leave Blank / Override: None)*
+4. Environment Variables:
+   - **Key**: `FASTAPI_BACKEND_URL`
+   - **Value**: `https://your-stock-journal.onrender.com`
+5. Click **Deploy**.

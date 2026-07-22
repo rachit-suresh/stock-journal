@@ -277,3 +277,33 @@ classDiagram
   "name": "Disciplined"
 }
 ```
+
+---
+
+## 6. Security, Environment Resolution & Deployment Topology
+
+### 6.1 CORS Security Policy (`ALLOWED_ORIGINS`)
+FastAPI mounts `CORSMiddleware` configured dynamically via `Settings.get_allowed_origins()` in `app/core/config.py`.
+- **Development**: Accepts wildcard `*` or `http://localhost:8000`.
+- **Production**: Accepts comma-separated domain whitelists defined via the `ALLOWED_ORIGINS` environment variable (e.g. `https://your-app.vercel.app,http://localhost:8000`).
+
+### 6.2 Frontend Dynamic API Resolution (`FASTAPI_BACKEND_URL`)
+Frontend assets (`static/state.js`, `static/mockApi.js`, `static/index.html`) dynamically resolve the target backend endpoint using the following fallback chain:
+1. `window.FASTAPI_BACKEND_URL` (injected via Vercel Environment Variables or script configuration).
+2. `window.API_BASE_URL` (legacy fallback).
+3. Relative URL `""` (used when the frontend is served directly by FastAPI on Render).
+
+### 6.3 Vercel Schema Compliance (`vercel.json`)
+The Vercel deployment configuration enforces strict compliance with Vercel v2 schema rules:
+```json
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/static/$1"
+    }
+  ]
+}
+```
+
