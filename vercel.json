@@ -1,15 +1,9 @@
 {
-  "version": 2,
-  "public": true,
   "cleanUrls": true,
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "https://stock-journal.onrender.com/api/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/static/$1"
+      "source": "/(.*)",
+      "destination": "/static/$1"
     }
   ]
 }
