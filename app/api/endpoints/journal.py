@@ -94,7 +94,11 @@ async def put_journal_compat(
     if not id:
         raise HTTPException(status_code=400, detail="Trade ID required.")
     
-    body = await request.json()
+    try:
+        body = await request.json() if await request.body() else {}
+    except Exception:
+        body = {}
+
     updated = await service.update_trade(id, body)
     if not updated:
         raise HTTPException(status_code=404, detail="Trade not found.")

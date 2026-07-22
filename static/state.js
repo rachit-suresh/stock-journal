@@ -83,10 +83,9 @@ class StateManager {
     if (exists) return false;
 
     this.strategies.push(cleanName);
-    this.notifyTabs();
     
     // Asynchronous backend push
-    fetch(`${getBaseUrl()}/api/journal?type=strategy`, {
+    fetch(`${getBaseUrl()}/api/strategies`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: cleanName })
@@ -104,10 +103,9 @@ class StateManager {
     if (index !== -1) {
       const actualName = this.strategies[index];
       this.strategies.splice(index, 1);
-      this.notifyTabs();
       
       // Asynchronous backend push
-      fetch(`${getBaseUrl()}/api/journal?type=strategy&name=${actualName}`, {
+      fetch(`${getBaseUrl()}/api/strategies/${encodeURIComponent(actualName)}`, {
         method: 'DELETE'
       }).catch(err => console.error("Failed to sync strategy deletion with backend:", err));
 
@@ -143,7 +141,7 @@ class StateManager {
     this.emotions.push(cleanName);
 
     // Asynchronous backend push
-    fetch(`${getBaseUrl()}/api/journal?type=emotion`, {
+    fetch(`${getBaseUrl()}/api/emotions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: cleanName })
@@ -163,7 +161,7 @@ class StateManager {
       this.emotions.splice(index, 1);
 
       // Asynchronous backend push
-      fetch(`${getBaseUrl()}/api/journal?type=emotion&name=${actualName}`, {
+      fetch(`${getBaseUrl()}/api/emotions/${encodeURIComponent(actualName)}`, {
         method: 'DELETE'
       }).catch(err => console.error("Failed to sync emotion deletion with backend:", err));
 
@@ -215,13 +213,12 @@ class StateManager {
     // Add locally immediately for snappy UI
     this.trades.push(newTrade);
     this.syncTrades(this.trades);
-    this.notifyTabs();
 
     // Asynchronous backend sync
-    fetch(`${getBaseUrl()}/api/journal`, {
+    fetch(`${getBaseUrl()}/api/trades`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tradeData)
+      body: JSON.stringify(newTrade)
     })
     .then(res => res.json())
     .then(json => {
@@ -231,7 +228,6 @@ class StateManager {
         if (idx !== -1) {
           this.trades[idx].id = json.data.id;
           this.syncTrades(this.trades);
-          this.notifyTabs();
         }
       }
     })
@@ -260,10 +256,9 @@ class StateManager {
     // Update locally
     this.trades[index] = updated;
     this.syncTrades(this.trades);
-    this.notifyTabs();
 
     // Asynchronous backend edit
-    fetch(`${getBaseUrl()}/api/journal?id=${id}`, {
+    fetch(`${getBaseUrl()}/api/trades/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedFields)
@@ -277,10 +272,9 @@ class StateManager {
     if (index !== -1) {
       this.trades.splice(index, 1);
       this.syncTrades(this.trades);
-      this.notifyTabs();
 
       // Asynchronous backend deletion
-      fetch(`${getBaseUrl()}/api/journal?id=${id}`, {
+      fetch(`${getBaseUrl()}/api/trades/${encodeURIComponent(id)}`, {
         method: 'DELETE'
       }).catch(err => console.error("Failed to delete trade from backend:", err));
 
@@ -318,7 +312,7 @@ class StateManager {
         this.syncTrades(this.trades);
         
         // Push full state to backend
-        fetch(`${getBaseUrl()}/api/journal?action=import`, {
+        fetch(`${getBaseUrl()}/api/journal/import`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
@@ -340,7 +334,7 @@ class StateManager {
     this.syncTrades(this.trades);
 
     // Call reset on backend
-    fetch(`${getBaseUrl()}/api/journal?action=reset`, {
+    fetch(`${getBaseUrl()}/api/journal/reset`, {
       method: 'POST'
     }).catch(err => console.error("Failed to sync database reset to backend:", err));
   }
@@ -349,7 +343,7 @@ class StateManager {
     this.trades = [];
     this.syncTrades(this.trades);
     
-    fetch(`${getBaseUrl()}/api/journal?action=import`, {
+    fetch(`${getBaseUrl()}/api/journal/import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trades: [], strategies: this.strategies, emotions: this.emotions })

@@ -1,3 +1,4 @@
+import re
 from typing import List
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.repositories.interfaces.strategy_repository import IStrategyRepository
@@ -19,7 +20,8 @@ class MongoStrategyRepository(IStrategyRepository):
         if not clean_name:
             return False
         
-        existing = await self.collection.find_one({"name": {"$regex": f"^{clean_name}$", "$options": "i"}})
+        pattern = f"^{re.escape(clean_name)}$"
+        existing = await self.collection.find_one({"name": {"$regex": pattern, "$options": "i"}})
         if existing:
             return False
             
@@ -27,7 +29,8 @@ class MongoStrategyRepository(IStrategyRepository):
         return True
 
     async def delete_strategy(self, name: str) -> bool:
-        doc = await self.collection.find_one({"name": {"$regex": f"^{name}$", "$options": "i"}})
+        pattern = f"^{re.escape(name.strip())}$"
+        doc = await self.collection.find_one({"name": {"$regex": pattern, "$options": "i"}})
         if not doc:
             return False
             
