@@ -53,7 +53,7 @@ class MockMarketFeed {
 
     const pollPrices = async () => {
       try {
-        const baseUrl = window.API_BASE_URL || '';
+        const baseUrl = window.FASTAPI_URL || window.API_BASE_URL || '';
         const response = await fetch(`${baseUrl}/api/prices?tokens=${tokensToPoll}`);
         const json = await response.json();
         
