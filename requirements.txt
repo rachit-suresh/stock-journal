@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+smartapi-python
+pyotp
+python-dotenv
+logzero
+websocket-client
+motor
+pymongo
+pytest
+pytest-asyncio
+httpx
