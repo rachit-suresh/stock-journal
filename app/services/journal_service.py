@@ -1,0 +1,224 @@
+import logging
+from typing import List, Dict, Any
+from app.repositories.interfaces.trade_repository import ITradeRepository
+from app.repositories.interfaces.strategy_repository import IStrategyRepository
+from app.repositories.interfaces.emotion_repository import IEmotionRepository
+
+logger = logging.getLogger("journal-service")
+
+DEFAULT_STRATEGIES = ["Breakout", "Pullback Support", "Gap Fill", "Trend Continuation", "Mean Reversion"]
+DEFAULT_EMOTIONS = ["Disciplined", "Confident", "Neutral", "Anxious", "FOMO", "Greedy"]
+
+INITIAL_TRADES = [
+  {
+    "id": "trade_1",
+    "symbol": "AAPL",
+    "side": "BUY",
+    "price": 182.50,
+    "stopLoss": 178.00,
+    "pfMatrix": 1.5,
+    "rsMatrix": 1.2,
+    "xPercentage": 5.0,
+    "shares": 50,
+    "date": "2026-07-01T14:30:00Z",
+    "strategy": "Breakout",
+    "emotion": "Disciplined",
+    "mistakes": ["None"],
+    "notes": "AAPL breakout above $182 resistance level. Strong volume on daily chart."
+  },
+  {
+    "id": "trade_2",
+    "symbol": "MSFT",
+    "side": "BUY",
+    "price": 335.00,
+    "stopLoss": 328.00,
+    "pfMatrix": 2.0,
+    "rsMatrix": 0.9,
+    "xPercentage": 8.5,
+    "shares": 30,
+    "date": "2026-07-02T15:15:00Z",
+    "strategy": "Pullback Support",
+    "emotion": "Confident",
+    "mistakes": ["None"],
+    "notes": "Bought the pullback to the 20 EMA on the 15-minute chart."
+  },
+  {
+    "id": "trade_3",
+    "symbol": "AAPL",
+    "side": "SELL",
+    "price": 189.20,
+    "stopLoss": 178.00,
+    "pfMatrix": 1.5,
+    "rsMatrix": 1.2,
+    "xPercentage": 5.0,
+    "shares": 30,
+    "date": "2026-07-05T19:45:00Z",
+    "strategy": "Breakout",
+    "emotion": "Disciplined",
+    "mistakes": ["None"],
+    "notes": "Trimmed 30 shares at the first target near $189. Kept 20 shares runner."
+  },
+  {
+    "id": "trade_4",
+    "symbol": "TSLA",
+    "side": "BUY",
+    "price": 245.00,
+    "stopLoss": 240.00,
+    "pfMatrix": 0.8,
+    "rsMatrix": 1.5,
+    "xPercentage": 12.0,
+    "shares": 20,
+    "date": "2026-07-07T13:45:00Z",
+    "strategy": "Gap Fill",
+    "emotion": "FOMO",
+    "mistakes": ["Chased price"],
+    "notes": "Gap up at open, rushed in. Need to wait for pullbacks next time."
+  },
+  {
+    "id": "trade_5",
+    "symbol": "TSLA",
+    "side": "SELL",
+    "price": 238.50,
+    "stopLoss": 240.00,
+    "pfMatrix": 0.8,
+    "rsMatrix": 1.5,
+    "xPercentage": 12.0,
+    "shares": 20,
+    "date": "2026-07-08T16:20:00Z",
+    "strategy": "Gap Fill",
+    "emotion": "Anxious",
+    "mistakes": ["Ignored stop loss", "Held too long"],
+    "notes": "Stopped out. Price filled the gap and went lower. Chasing cost me a bad loss."
+  },
+  {
+    "id": "trade_6",
+    "symbol": "NVDA",
+    "side": "BUY",
+    "price": 460.00,
+    "stopLoss": 450.00,
+    "pfMatrix": 2.5,
+    "rsMatrix": 2.1,
+    "xPercentage": 15.0,
+    "shares": 15,
+    "date": "2026-07-10T14:05:00Z",
+    "strategy": "Trend Continuation",
+    "emotion": "Confident",
+    "mistakes": ["None"],
+    "notes": "NVDA continues to make higher highs. Adding position on daily flag pattern."
+  },
+  {
+    "id": "trade_7",
+    "symbol": "AAPL",
+    "side": "SELL",
+    "price": 194.00,
+    "stopLoss": 178.00,
+    "pfMatrix": 1.5,
+    "rsMatrix": 1.2,
+    "xPercentage": 5.0,
+    "shares": 20,
+    "date": "2026-07-12T18:30:00Z",
+    "strategy": "Breakout",
+    "emotion": "Greedy",
+    "mistakes": ["None"],
+    "notes": "Sold the remaining 20 shares of AAPL at $194. Total capture was excellent."
+  },
+  {
+    "id": "trade_8",
+    "symbol": "AMZN",
+    "side": "BUY",
+    "price": 128.00,
+    "stopLoss": 124.00,
+    "pfMatrix": 1.2,
+    "rsMatrix": 1.1,
+    "xPercentage": 3.5,
+    "shares": 40,
+    "date": "2026-07-14T15:00:00Z",
+    "strategy": "Pullback Support",
+    "emotion": "Disciplined",
+    "mistakes": ["None"],
+    "notes": "AMZN retesting major support level at $128. Standard risk/reward setup."
+  },
+  {
+    "id": "trade_9",
+    "symbol": "MSFT",
+    "side": "SELL",
+    "price": 348.00,
+    "stopLoss": 328.00,
+    "pfMatrix": 2.0,
+    "rsMatrix": 0.9,
+    "xPercentage": 8.5,
+    "shares": 20,
+    "date": "2026-07-15T16:40:00Z",
+    "strategy": "Pullback Support",
+    "emotion": "Disciplined",
+    "mistakes": ["Exited too early"],
+    "notes": "Sold 20 shares of MSFT at $348. Position is still green, holding 10 shares runner."
+  }
+]
+
+class JournalService:
+    def __init__(
+        self,
+        trade_repo: ITradeRepository,
+        strategy_repo: IStrategyRepository,
+        emotion_repo: IEmotionRepository
+    ):
+        self.trade_repo = trade_repo
+        self.strategy_repo = strategy_repo
+        self.emotion_repo = emotion_repo
+
+    async def seed_if_empty(self):
+        """Initializes database collections with default trades and tags if empty."""
+        trades = await self.trade_repo.get_all_trades()
+        strategies = await self.strategy_repo.get_all_strategies()
+        emotions = await self.emotion_repo.get_all_emotions()
+
+        if not strategies:
+            logger.info("Seeding initial strategies...")
+            await self.strategy_repo.reset_strategies(DEFAULT_STRATEGIES)
+
+        if not emotions:
+            logger.info("Seeding initial emotions...")
+            await self.emotion_repo.reset_emotions(DEFAULT_EMOTIONS)
+
+        if not trades:
+            logger.info("Seeding initial trades...")
+            await self.trade_repo.reset_trades(INITIAL_TRADES)
+
+    async def get_journal_overview(self) -> Dict[str, Any]:
+        await self.seed_if_empty()
+        trades = await self.trade_repo.get_all_trades()
+        strategies = await self.strategy_repo.get_all_strategies()
+        emotions = await self.emotion_repo.get_all_emotions()
+
+        return {
+            "trades": trades,
+            "strategies": strategies,
+            "emotions": emotions
+        }
+
+    async def add_trade(self, trade_data: dict) -> dict:
+        return await self.trade_repo.create_trade(trade_data)
+
+    async def update_trade(self, trade_id: str, trade_update: dict) -> dict:
+        return await self.trade_repo.update_trade(trade_id, trade_update)
+
+    async def delete_trade(self, trade_id: str) -> bool:
+        return await self.trade_repo.delete_trade(trade_id)
+
+    async def add_strategy(self, name: str) -> bool:
+        return await self.strategy_repo.add_strategy(name)
+
+    async def delete_strategy(self, name: str) -> bool:
+        return await self.strategy_repo.delete_strategy(name)
+
+    async def add_emotion(self, name: str) -> bool:
+        return await self.emotion_repo.add_emotion(name)
+
+    async def delete_emotion(self, name: str) -> bool:
+        return await self.emotion_repo.delete_emotion(name)
+
+    async def reset_to_mock(self):
+        await self.trade_repo.reset_trades(INITIAL_TRADES)
+        await self.strategy_repo.reset_strategies(DEFAULT_STRATEGIES)
+        await self.emotion_repo.reset_emotions(DEFAULT_EMOTIONS)
