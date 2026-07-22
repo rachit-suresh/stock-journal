@@ -1,5 +1,7 @@
 import { initialTrades } from './mockData.js?v=2.3';
 
+const getBaseUrl = () => window.API_BASE_URL || '';
+
 class StateManager {
   constructor() {
     this.trades = [];
@@ -22,7 +24,7 @@ class StateManager {
   // Load from FastAPI backend, fallback to LocalStorage/Mock if offline
   async loadState() {
     try {
-      const response = await fetch('/api/journal');
+      const response = await fetch(`${getBaseUrl()}/api/journal`);
       const json = await response.json();
       if (json.success && json.data) {
         this.trades = json.data.trades;
@@ -83,7 +85,7 @@ class StateManager {
     this.strategies.push(cleanName);
     
     // Asynchronous backend push
-    fetch('/api/journal?type=strategy', {
+    fetch(`${getBaseUrl()}/api/journal?type=strategy`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: cleanName })
@@ -103,7 +105,7 @@ class StateManager {
       this.strategies.splice(index, 1);
       
       // Asynchronous backend push
-      fetch(`/api/journal?type=strategy&name=${actualName}`, {
+      fetch(`${getBaseUrl()}/api/journal?type=strategy&name=${actualName}`, {
         method: 'DELETE'
       }).catch(err => console.error("Failed to sync strategy deletion with backend:", err));
 
@@ -139,7 +141,7 @@ class StateManager {
     this.emotions.push(cleanName);
 
     // Asynchronous backend push
-    fetch('/api/journal?type=emotion', {
+    fetch(`${getBaseUrl()}/api/journal?type=emotion`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: cleanName })
@@ -159,7 +161,7 @@ class StateManager {
       this.emotions.splice(index, 1);
 
       // Asynchronous backend push
-      fetch(`/api/journal?type=emotion&name=${actualName}`, {
+      fetch(`${getBaseUrl()}/api/journal?type=emotion&name=${actualName}`, {
         method: 'DELETE'
       }).catch(err => console.error("Failed to sync emotion deletion with backend:", err));
 
@@ -213,7 +215,7 @@ class StateManager {
     this.syncTrades(this.trades);
 
     // Asynchronous backend sync
-    fetch('/api/journal', {
+    fetch(`${getBaseUrl()}/api/journal`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(tradeData)
@@ -256,7 +258,7 @@ class StateManager {
     this.syncTrades(this.trades);
 
     // Asynchronous backend edit
-    fetch(`/api/journal?id=${id}`, {
+    fetch(`${getBaseUrl()}/api/journal?id=${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedFields)
@@ -272,7 +274,7 @@ class StateManager {
       this.syncTrades(this.trades);
 
       // Asynchronous backend deletion
-      fetch(`/api/journal?id=${id}`, {
+      fetch(`${getBaseUrl()}/api/journal?id=${id}`, {
         method: 'DELETE'
       }).catch(err => console.error("Failed to delete trade from backend:", err));
 
@@ -310,7 +312,7 @@ class StateManager {
         this.syncTrades(this.trades);
         
         // Push full state to backend
-        fetch('/api/journal?action=import', {
+        fetch(`${getBaseUrl()}/api/journal?action=import`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
@@ -332,7 +334,7 @@ class StateManager {
     this.syncTrades(this.trades);
 
     // Call reset on backend
-    fetch('/api/journal?action=reset', {
+    fetch(`${getBaseUrl()}/api/journal?action=reset`, {
       method: 'POST'
     }).catch(err => console.error("Failed to sync database reset to backend:", err));
   }
@@ -341,7 +343,7 @@ class StateManager {
     this.trades = [];
     this.syncTrades(this.trades);
     
-    fetch('/api/journal?action=import', {
+    fetch(`${getBaseUrl()}/api/journal?action=import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trades: [], strategies: this.strategies, emotions: this.emotions })
