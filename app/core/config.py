@@ -19,9 +19,17 @@ class Settings:
     MOCK_STREAMER: bool = os.getenv("MOCK_STREAMER", "false").lower() == "true"
     TOKENS_STR: str = os.getenv("TOKENS", "3045,2885,11536,1594,3456")
 
+    # CORS & Security Config
+    ALLOWED_ORIGINS_STR: str = os.getenv("ALLOWED_ORIGINS", "*")
+
     # MongoDB Config
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     MONGO_DB_NAME: str = os.getenv("MONGO_DB_NAME", "stock_journal")
+
+    def get_allowed_origins(self) -> list[str]:
+        if not self.ALLOWED_ORIGINS_STR or self.ALLOWED_ORIGINS_STR.strip() == "*":
+            return ["*"]
+        return [o.strip() for o in self.ALLOWED_ORIGINS_STR.split(",") if o.strip()]
 
     def get_tokens(self) -> list[str]:
         if not self.TOKENS_STR:

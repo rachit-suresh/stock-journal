@@ -1,6 +1,6 @@
 import { initialTrades } from './mockData.js?v=2.3';
 
-const getBaseUrl = () => window.FASTAPI_URL || window.API_BASE_URL || '';
+const getBaseUrl = () => window.FASTAPI_BACKEND_URL || window.API_BASE_URL || '';
 
 class StateManager {
   constructor() {
