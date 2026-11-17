@@ -364,10 +364,48 @@ The application design adheres to **SOLID design principles**:
 | **Repository Pattern (DIP)** | Direct MongoDB queries in routes | Extra interface classes & abstract methods | Total database engine independence (MongoDB, SQL, Redis interchangeable). |
 | **Thread-Safe `PriceCache`** | External Redis Cache | Prices exist in RAM (reset on process restart) | Microsecond read speeds without cloud cache costs or network hops. |
 | **Pydantic v2 Models** | Plain Python Dicts | Minor CPU initialization overhead | Rust-accelerated type validation & automatic OpenAPI schema docs. |
+| **Clerk Development instance** (`*.clerk.accounts.dev` issuer) | Clerk Production instance on `*.vercel.app` | Development-tier limits and a dev badge; no custom domain | Works on Vercel and `localhost` today with a valid wildcard certificate (see §11). |
 
 ---
 
-## 11. Technical Glossary
+## 11. Identity Provider Domain Decision (Clerk)
+
+### 11.1 Finding: a Clerk production instance cannot live on `*.vercel.app`
+
+A Clerk production instance binds its Frontend API to `clerk.<primary-domain>`, and that host must terminate TLS with a certificate covering the name. A publishable key issued for `friendlytrading.vercel.app` therefore decodes to `clerk.friendlytrading.vercel.app`. Probed on 2026-11-18:
+
+| Host | Result |
+| :--- | :--- |
+| `friendlytrading.vercel.app` | TLS OK, certificate `CN=*.vercel.app` |
+| `clerk.friendlytrading.vercel.app` | `SSL: UNEXPECTED_EOF_WHILE_READING` — handshake refused |
+| `zzztest.friendlytrading.vercel.app` (control) | identical failure |
+
+Vercel's `*.vercel.app` certificate matches exactly one label, so a three-label `clerk.<project>.vercel.app` name matches nothing and is dropped during the handshake. A CNAME cannot rescue it either: the `vercel.app` zone belongs to Vercel, while Clerk requires `clerk` → `frontend-api.clerk.services` in a zone the operator controls. Clerk's dashboard consequently reports the domain as **Pending**.
+
+Blast radius if shipped as-is: `static/auth.js` cannot load `clerk.browser.js` (the gate shows "Sign-in is unavailable right now"), and the backend's `PyJWKClient` cannot fetch `<issuer>/.well-known/jwks.json`, so every `/api` call answers `401`.
+
+### 11.2 Options
+
+| Option | How | Consequence |
+| :--- | :--- | :--- |
+| **(a) Development instance** | Clerk → Development instance → `pk_test_…`; `CLERK_ISSUER=https://<slug>.clerk.accounts.dev` | Valid wildcard TLS on `accounts.dev`, works from Vercel and `localhost` today. No custom domain; development-tier limits and badge apply. |
+| **(b) Own a real domain** | Register e.g. `friendlytrading.com`, attach it to Vercel, set it as the Clerk primary domain, create the `clerk` CNAME, wait for **Verified**, then use the `pk_live_` key with `CLERK_ISSUER=https://clerk.friendlytrading.com` | Production instance, no dev badge, full branding. Costs a domain plus one DNS round-trip, and changes the site origin (`ALLOWED_ORIGINS`, `vercel.json`, `FASTAPI_BACKEND_URL`). |
+| **(c) Keep the pending production instance** | nothing | Broken: the gate never opens and the API always answers `401`. |
+
+### 11.3 Decision
+
+Launch on **(a)**. The audience is the operator plus one family member, so a custom domain buys no functional value, and the development instance accepts both the Vercel origin and `localhost` — which also keeps local development working with the same key. Move to **(b)** only if the site is shared beyond the family or the development badge becomes a concern.
+
+Consequences:
+- `window.CLERK_PUBLISHABLE_KEY` in `static/index.html` starts with `pk_test_`, and `CLERK_ISSUER` on Render points at `*.clerk.accounts.dev`.
+- The `sk_…` secret key stays unused: verification is JWKS-only, so Clerk's generated `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` snippet does not apply to this static frontend.
+- The pending `friendlytrading.vercel.app` production domain can be deleted in the Clerk dashboard to keep the instance list clean.
+
+Revisit trigger: a custom domain is purchased, or Clerk changes development-instance limits.
+
+---
+
+## 12. Technical Glossary
 
 * **LTP (Last Traded Price):** The execution price of the most recent transaction on the exchange matching engine.
 * **SWR (Stale-While-Revalidate):** An HTTP cache invalidation strategy defined in RFC 5861 that returns cached data immediately while asynchronously revalidating in the background.

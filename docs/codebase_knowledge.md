@@ -263,6 +263,7 @@ Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the cur
 10. **The demo tickers still map US symbols onto NSE instrument keys** (BTC scaled ×90) — cosmetic, but it means the dashboard watchlist and the Upstox feed disagree about what "AAPL" is. Real symbols go through the per-account watchlist.
 11. **Unpinned `requirements.txt`** — no lockfile, so `upstox-python-sdk`/`motor` behaviours can drift.
 12. **The Clerk publishable key is baked into `index.html`** — fine (it is public), but rotating Clerk instances means a redeploy of the static site, not just an env change.
+13. **The Clerk instance must be a Development instance, or a production instance on an owned domain** — a production key points at `clerk.<domain>`, and `clerk.<project>.vercel.app` cannot serve Clerk because Vercel's `*.vercel.app` certificate covers one label only (TLS handshake refused → no `clerk.browser.js`, no JWKS → every `/api` call `401`). See `design_decisions_and_tradeoffs.md` §11.
 
 ---
 

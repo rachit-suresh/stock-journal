@@ -1,5 +1,5 @@
-import { stateManager } from './state.js?v=2.5';
-import { marketFeed, SYMBOL_TO_TOKEN } from './mockApi.js?v=2.5';
+import { stateManager } from './state.js?v=2.6';
+import { marketFeed, SYMBOL_TO_TOKEN } from './mockApi.js?v=2.6';
 import { apiFetch } from './api.js';
 
 // ==========================================================================

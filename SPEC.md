@@ -34,7 +34,7 @@
   | `MONGO_URI` | MongoDB connection string (Atlas SRV URI in production) | `mongodb://localhost:27017` |
   | `MONGO_DB_NAME` | Database name | `stock_journal` |
   | `ENV` | `development` / `production`; guards `AUTH_DISABLED` and CORS defaults | `development` |
-  | `CLERK_ISSUER` | Clerk instance issuer URL; JWKS derived as `<issuer>/.well-known/jwks.json` | `""` |
+  | `CLERK_ISSUER` | Clerk instance issuer URL; JWKS derived as `<issuer>/.well-known/jwks.json`. Must be the instance's TLS-valid Frontend API host — a `clerk.<project>.vercel.app` host is unreachable (see DD §11) | `""` |
   | `AUTH_DISABLED` | Dev-only bypass of JWT verification (refused when `ENV=production`) | `false` |
   | `DEV_USER_ID` | Subject used for every request while `AUTH_DISABLED=true` | `dev-local` |
   | `MUTATION_RATE_LIMIT_PER_MINUTE` | Per-user, per-IP ceiling on POST/PUT/DELETE; `<= 0` disables (SPEC-AUTH-15) | `60` |

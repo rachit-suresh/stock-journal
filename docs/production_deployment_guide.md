@@ -67,13 +67,17 @@ The Render host also appears in `vercel.json` as the `/api/:path*` rewrite desti
 
 ### Clerk Setup (one-time, ~5 minutes)
 1. Create an application at [dashboard.clerk.com](https://dashboard.clerk.com) (name it e.g. `stock-journal`).
-2. **User & Authentication → Email, phone, username**: enable **Email address** and add **Google** as a social connection.
-3. **Configure → Restrictions**: keep sign-up open (the app is designed for open signup), and leave "Require email verification" on.
-4. **Configure → Paths**: leave the hosted pages enabled, or set `Sign-in URL` / `Sign-up URL` to your Vercel domain if you prefer the hosted flow.
-5. **API keys**:
+2. **Stay on the Development instance.** Do not promote a Production instance unless you own a real domain — see the warning below.
+3. **User & Authentication → Email, phone, username**: enable **Email address** and add **Google** as a social connection.
+4. **Configure → Restrictions**: keep sign-up open (the app is designed for open signup), and leave "Require email verification" on.
+5. **Configure → Paths**: leave the hosted pages enabled, or set `Sign-in URL` / `Sign-up URL` to your Vercel domain if you prefer the hosted flow.
+6. **API keys**:
    - Copy the **Publishable key** (`pk_test_…`) into `static/index.html` → `window.CLERK_PUBLISHABLE_KEY`.
-   - Copy the **Issuer** (`https://<instance>.clerk.accounts.dev`) into Render as `CLERK_ISSUER`. It is also the `iss` claim in the JWKS, so a mismatch means every token is rejected with `401`.
-6. **Configure → Domains / Allowed origins**: add `https://<your-app>.vercel.app` (and `http://localhost:8000` while testing). Clerk refuses to mint sessions for unlisted origins.
+   - Copy the **Issuer** (`https://<slug>.clerk.accounts.dev`) into Render as `CLERK_ISSUER`. It is also the `iss` claim in the JWKS, so a mismatch means every token is rejected with `401`.
+   - Ignore the `CLERK_SECRET_KEY` / `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` snippet: this is a static frontend, the secret key is never used (tokens are verified against the public JWKS).
+7. **Configure → Domains / Allowed origins**: add `https://<your-app>.vercel.app` (and `http://localhost:8000` while testing). Clerk refuses to mint sessions for unlisted origins.
+
+> **A Clerk Production instance cannot run on `*.vercel.app`.** Its Frontend API lives on `clerk.<primary-domain>`, and Vercel's wildcard certificate `*.vercel.app` covers only one label, so `clerk.<project>.vercel.app` fails the TLS handshake (Clerk's dashboard shows the domain as **Pending** forever, and no CNAME can be created in a zone you do not control). With that key, `clerk.browser.js` never loads and the backend's JWKS fetch fails, so every `/api` call answers `401`. Either stay on the Development instance (recommended for a two-person app) or attach a real, owned domain to Vercel before promoting to Production. Recorded in `design_decisions_and_tradeoffs.md` §11.
 
 ---
 
