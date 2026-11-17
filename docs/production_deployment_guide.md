@@ -54,13 +54,16 @@ WATCHLIST_TTL_SECONDS=3600
 STREAMER_SYNC_SECONDS=15
 ```
 
-#### Frontend (Vercel Project Environment Variables)
-```env
-# FastAPI Backend Production URL
-FASTAPI_BACKEND_URL=https://stock-journal-xenm.onrender.com
-```
+#### Frontend (Vercel)
 
-`window.CLERK_PUBLISHABLE_KEY` is **not** an env var on Vercel: it is set inside `static/index.html` (it is public by design). Leaving it empty keeps the UI in dev mode, which will fail against a production API that requires a token.
+**No environment variables are required.** Vercel only serves `static/` as-is — there is no build step, so Vercel env vars are never injected into the HTML and setting `FASTAPI_BACKEND_URL` there has no effect. Both frontend values live in `static/index.html`:
+
+| Constant in `static/index.html` | Purpose | Example |
+| --- | --- | --- |
+| `window.FASTAPI_BACKEND_URL` (line ~9) | Origin of the FastAPI service that `apiFetch` calls | `https://stock-journal-xenm.onrender.com` |
+| `window.CLERK_PUBLISHABLE_KEY` (line ~13) | Clerk instance (public by design) | `pk_test_…` |
+
+The Render host also appears in `vercel.json` as the `/api/:path*` rewrite destination; keep the two in sync if you rename the service. Leaving `CLERK_PUBLISHABLE_KEY` empty keeps the UI in dev mode (the sidebar then reads "Dev mode"), which fails against a production API that requires a token.
 
 ### Clerk Setup (one-time, ~5 minutes)
 1. Create an application at [dashboard.clerk.com](https://dashboard.clerk.com) (name it e.g. `stock-journal`).
@@ -127,10 +130,8 @@ Before pushing to production, verify all pre-flight checks:
    - **Root Directory**: `.` (Project Root)
    - **Build Command**: *(Leave Blank / Override: None)*
    - **Output Directory**: `static`
-4. Environment Variables:
-   - **Key**: `FASTAPI_BACKEND_URL`
-   - **Value**: `https://stock-journal-xenm.onrender.com`
-5. Edit `static/index.html` and set `window.CLERK_PUBLISHABLE_KEY = "pk_test_…";` (the empty default is dev mode). Commit → Vercel redeploys.
+4. Environment Variables: **none** — the static site reads its backend URL and Clerk key from `static/index.html`, not from Vercel env vars (there is no build step to inject them).
+5. Edit `static/index.html` and set `window.CLERK_PUBLISHABLE_KEY = "pk_test_…";` (the empty default is dev mode), plus `window.FASTAPI_BACKEND_URL` if your Render service is not `stock-journal-xenm.onrender.com`. Commit → Vercel redeploys.
 6. Click **Deploy**.
 
 > The static site is served from `static/`, so every UI change ships with a Vercel deploy. Bump the `?v=` query strings in `index.html` when you change CSS/JS to defeat browser caching.
