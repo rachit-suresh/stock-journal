@@ -1,9 +1,12 @@
 import time
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+from app.core.security import get_current_user
 from app.models.responses import PricesResponse
 from app.streaming.price_cache import price_cache
 
-router = APIRouter()
+# Prices are market data, not user data: authenticated but not owner-scoped
+# (SPEC-AUTH-12).
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 @router.get("/prices", response_model=PricesResponse)
 async def get_prices(tokens: str = Query(None)):

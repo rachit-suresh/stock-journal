@@ -3,7 +3,11 @@ from app.repositories.interfaces.emotion_repository import IEmotionRepository
 from app.repositories.interfaces.trade_repository import ITradeRepository
 
 class MemoryEmotionRepository(IEmotionRepository):
-    def __init__(self, initial_emotions: Optional[List[str]] = None, trade_repo: Optional[ITradeRepository] = None):
+    def __init__(self, owner_id: str, initial_emotions: Optional[List[str]] = None,
+                 trade_repo: Optional[ITradeRepository] = None):
+        if not owner_id:
+            raise ValueError("owner_id is required for owner-scoped repositories")
+        self.owner_id = owner_id
         self.emotions = list(initial_emotions or [])
         self.trade_repo = trade_repo
 
@@ -27,9 +31,9 @@ class MemoryEmotionRepository(IEmotionRepository):
                 break
         if match_idx == -1:
             return False
-            
+
         actual_name = self.emotions.pop(match_idx)
-        
+
         # Soft cascading update on trades
         if self.trade_repo:
             trades = await self.trade_repo.get_all_trades()

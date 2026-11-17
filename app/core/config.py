@@ -1,5 +1,9 @@
+import logging
 import os
+
 from dotenv import load_dotenv
+
+logger = logging.getLogger("config")
 
 # Load environmental variables from .env file if available
 load_dotenv()
@@ -18,6 +22,23 @@ class Settings:
     TOKENS_STR: str = os.getenv("TOKENS", "NSE_EQ|INE062A01020,NSE_EQ|INE160A01022,NSE_EQ|INE467I01027,NSE_EQ|INE009A01021,NSE_EQ|INE075A01022")
     # Cached ticks older than this are reported as stale by GET /api/prices.
     PRICE_MAX_AGE_SECONDS: float = float(os.getenv("PRICE_MAX_AGE_SECONDS", "30"))
+    # How often the supervisor thread re-reads the subscription registry.
+    STREAMER_SYNC_SECONDS: float = float(os.getenv("STREAMER_SYNC_SECONDS", "15"))
+
+    # Authentication (SPEC-AUTH). ENV=production refuses AUTH_DISABLED.
+    ENV: str = os.getenv("ENV", "development")
+    CLERK_ISSUER: str = os.getenv("CLERK_ISSUER", "")
+    AUTH_DISABLED: bool = os.getenv("AUTH_DISABLED", "false").lower() == "true"
+    DEV_USER_ID: str = os.getenv("DEV_USER_ID", "dev-local")
+
+    # Abuse limits (GAP-10). 0 disables a limit.
+    MUTATION_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("MUTATION_RATE_LIMIT_PER_MINUTE", "60"))
+    MAX_TRADES_PER_USER: int = int(os.getenv("MAX_TRADES_PER_USER", "2000"))
+    MAX_STRATEGIES_PER_USER: int = int(os.getenv("MAX_STRATEGIES_PER_USER", "50"))
+    MAX_EMOTIONS_PER_USER: int = int(os.getenv("MAX_EMOTIONS_PER_USER", "50"))
+    MAX_WATCHLIST_KEYS: int = int(os.getenv("WATCHLIST_MAX_KEYS", "25"))
+    # A watchlist stops pinning stream slots once its owner has been idle this long.
+    WATCHLIST_TTL_SECONDS: float = float(os.getenv("WATCHLIST_TTL_SECONDS", "3600"))
 
     # CORS & Security Config
     ALLOWED_ORIGINS_STR: str = os.getenv("ALLOWED_ORIGINS", "*")
@@ -38,5 +59,26 @@ class Settings:
 
     def has_upstox_credentials(self) -> bool:
         return bool(self.UPSTOX_ACCESS_TOKEN)
+
+    def is_production(self) -> bool:
+        return self.ENV.strip().lower() == "production"
+
+    def auth_mode(self) -> str:
+        """`clerk` when tokens are verified, `dev-bypass` for AUTH_DISABLED."""
+        return "dev-bypass" if self.AUTH_DISABLED else "clerk"
+
+    def validate_auth_config(self) -> None:
+        """Fail fast on configurations that are insecure or unusable."""
+        if self.AUTH_DISABLED and self.is_production():
+            raise RuntimeError(
+                "AUTH_DISABLED=true is refused when ENV=production. "
+                "Set CLERK_ISSUER and unset AUTH_DISABLED before deploying."
+            )
+        if not self.AUTH_DISABLED and not self.CLERK_ISSUER:
+            # Fail closed rather than open: requests stay 401 until it is set.
+            logger.error(
+                "CLERK_ISSUER is not set and AUTH_DISABLED is false. "
+                "Every /api request will be rejected with 401."
+            )
 
 settings = Settings()

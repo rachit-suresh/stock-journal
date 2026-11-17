@@ -5,6 +5,7 @@ python-dotenv
 websocket-client
 motor
 pymongo
+PyJWT[crypto]>=2.8
 pytest
 pytest-asyncio
 httpx

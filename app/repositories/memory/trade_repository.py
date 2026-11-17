@@ -2,8 +2,16 @@ from typing import List, Optional
 from app.repositories.interfaces.trade_repository import ITradeRepository
 
 class MemoryTradeRepository(ITradeRepository):
-    def __init__(self, initial_trades: Optional[List[dict]] = None):
-        self.trades = [dict(t) for t in (initial_trades or [])]
+    """In-memory trade store used by tests; mirrors the Mongo contract."""
+
+    def __init__(self, owner_id: str, initial_trades: Optional[List[dict]] = None):
+        if not owner_id:
+            raise ValueError("owner_id is required for owner-scoped repositories")
+        self.owner_id = owner_id
+        self.trades = [
+            {k: v for k, v in dict(t).items() if k != "owner_id"}
+            for t in (initial_trades or [])
+        ]
 
     async def get_all_trades(self) -> List[dict]:
         return [dict(t) for t in self.trades]
@@ -15,7 +23,7 @@ class MemoryTradeRepository(ITradeRepository):
         return None
 
     async def create_trade(self, trade: dict) -> dict:
-        trade_data = dict(trade)
+        trade_data = {k: v for k, v in dict(trade).items() if k != "owner_id"}
         if "id" not in trade_data:
             trade_data["id"] = f"trade_mem_{len(self.trades) + 1}"
         self.trades.append(trade_data)
@@ -26,7 +34,7 @@ class MemoryTradeRepository(ITradeRepository):
             if t.get("id") == trade_id or t.get("custom_id") == trade_id:
                 # Mirrors MongoTradeRepository: absent keys are unchanged,
                 # explicit None clears the field.
-                patch = {k: v for k, v in trade_update.items() if k not in ("id", "custom_id", "_id")}
+                patch = {k: v for k, v in trade_update.items() if k not in ("id", "custom_id", "_id", "owner_id")}
                 updated = {**t, **patch}
                 self.trades[idx] = updated
                 return dict(updated)
@@ -40,4 +48,4 @@ class MemoryTradeRepository(ITradeRepository):
         return False
 
     async def reset_trades(self, trades: List[dict]) -> None:
-        self.trades = [dict(t) for t in trades]
+        self.trades = [{k: v for k, v in dict(t).items() if k != "owner_id"} for t in trades]
