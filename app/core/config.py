@@ -9,15 +9,15 @@ class Settings:
     PROJECT_NAME: str = "Stock Journal Monolith"
     VERSION: str = "2.0.0"
 
-    # SmartAPI Credentials
-    API_KEY: str = os.getenv("SMART_API_KEY", "")
-    CLIENT_CODE: str = os.getenv("SMART_CLIENT_CODE", "")
-    PASSWORD: str = os.getenv("SMART_PASSWORD", "")
-    TOTP_SECRET: str = os.getenv("SMART_TOTP_SECRET", "")
+    # Upstox Analytics Access Token: read-only, valid one year, covers Market
+    # Data + Streaming. No OAuth app or daily refresh; renew before expiry.
+    UPSTOX_ACCESS_TOKEN: str = os.getenv("UPSTOX_ACCESS_TOKEN", "")
 
     # Mode & Streamer Config
     MOCK_STREAMER: bool = os.getenv("MOCK_STREAMER", "false").lower() == "true"
-    TOKENS_STR: str = os.getenv("TOKENS", "3045,2885,11536,1594,3456")
+    TOKENS_STR: str = os.getenv("TOKENS", "NSE_EQ|INE062A01020,NSE_EQ|INE160A01022,NSE_EQ|INE467I01027,NSE_EQ|INE009A01021,NSE_EQ|INE075A01022")
+    # Cached ticks older than this are reported as stale by GET /api/prices.
+    PRICE_MAX_AGE_SECONDS: float = float(os.getenv("PRICE_MAX_AGE_SECONDS", "30"))
 
     # CORS & Security Config
     ALLOWED_ORIGINS_STR: str = os.getenv("ALLOWED_ORIGINS", "*")
@@ -36,7 +36,7 @@ class Settings:
             return []
         return [t.strip() for t in self.TOKENS_STR.split(",") if t.strip()]
 
-    def has_smart_api_credentials(self) -> bool:
-        return all([self.API_KEY, self.CLIENT_CODE, self.PASSWORD, self.TOTP_SECRET])
+    def has_upstox_credentials(self) -> bool:
+        return bool(self.UPSTOX_ACCESS_TOKEN)
 
 settings = Settings()

@@ -42,3 +42,24 @@ def test_price_cache_concurrent_multithreaded_writes():
         for i in range(5):
             val = cache.get_price(f"token_{t_idx}_{i}")
             assert val is not None
+
+
+def test_price_cache_reports_freshness_meta():
+    cache = PriceCache(max_age_seconds=60)
+    cache.set_price("NSE_EQ|TEST_FRESH", 650.0)
+
+    meta = cache.get_batch_meta(["NSE_EQ|TEST_FRESH", "NSE_EQ|TEST_UNKNOWN"])
+
+    assert meta["NSE_EQ|TEST_FRESH"]["stale"] is False
+    assert isinstance(meta["NSE_EQ|TEST_FRESH"]["as_of"], int)
+    assert meta["NSE_EQ|TEST_UNKNOWN"] == {"as_of": None, "stale": True}
+
+
+def test_price_cache_flags_entries_older_than_max_age():
+    cache = PriceCache(max_age_seconds=0)
+    cache.set_price("NSE_EQ|TEST_STALE", 80.0)
+    time.sleep(0.01)  # let the tick age past the zero-second threshold
+
+    assert cache.get_batch_meta(["NSE_EQ|TEST_STALE"])["NSE_EQ|TEST_STALE"]["stale"] is True
+    # Stale entries are flagged, not dropped.
+    assert cache.get_price("NSE_EQ|TEST_STALE") == 80.0

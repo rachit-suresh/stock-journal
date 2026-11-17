@@ -38,8 +38,13 @@ class MongoTradeRepository(ITradeRepository):
 
     async def update_trade(self, trade_id: str, trade_update: dict) -> Optional[dict]:
         query = {"$or": [{"_id": ObjectId(trade_id)}, {"custom_id": trade_id}]} if ObjectId.is_valid(trade_id) else {"custom_id": trade_id}
-        
-        clean_update = {k: v for k, v in trade_update.items() if v is not None}
+
+        if not trade_update:
+            return await self.get_trade_by_id(trade_id)
+
+        # Keys absent from the payload never reach here (exclude_unset upstream);
+        # an explicit None is an intentional clear, so it is written as null.
+        clean_update = {k: v for k, v in trade_update.items() if k not in ("id", "custom_id", "_id")}
         if not clean_update:
             return await self.get_trade_by_id(trade_id)
 

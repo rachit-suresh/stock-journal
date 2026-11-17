@@ -24,7 +24,10 @@ class MemoryTradeRepository(ITradeRepository):
     async def update_trade(self, trade_id: str, trade_update: dict) -> Optional[dict]:
         for idx, t in enumerate(self.trades):
             if t.get("id") == trade_id or t.get("custom_id") == trade_id:
-                updated = {**t, **{k: v for k, v in trade_update.items() if v is not None}}
+                # Mirrors MongoTradeRepository: absent keys are unchanged,
+                # explicit None clears the field.
+                patch = {k: v for k, v in trade_update.items() if k not in ("id", "custom_id", "_id")}
+                updated = {**t, **patch}
                 self.trades[idx] = updated
                 return dict(updated)
         return None

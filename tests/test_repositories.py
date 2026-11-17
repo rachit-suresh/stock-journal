@@ -84,3 +84,35 @@ async def test_emotion_repository_duplicate_and_cascading_delete():
     # Trade using Anxious should be reassigned to Neutral
     t2 = await trade_repo.get_trade_by_id("t2")
     assert t2["emotion"] == "Neutral"
+
+
+async def test_update_trade_clears_field_when_explicitly_null():
+    repo = MemoryTradeRepository()
+    created = await repo.create_trade({
+        "symbol": "SBIN",
+        "side": "BUY",
+        "price": 650.0,
+        "shares": 10,
+        "stopLoss": 640.0,
+    })
+
+    updated = await repo.update_trade(created["id"], {"stopLoss": None})
+
+    assert updated["stopLoss"] is None
+    assert updated["price"] == 650.0
+
+
+async def test_update_trade_leaves_absent_fields_untouched():
+    repo = MemoryTradeRepository()
+    created = await repo.create_trade({
+        "symbol": "TCS",
+        "side": "BUY",
+        "price": 3500.0,
+        "shares": 5,
+        "stopLoss": 3400.0,
+    })
+
+    updated = await repo.update_trade(created["id"], {"price": 3550.0})
+
+    assert updated["price"] == 3550.0
+    assert updated["stopLoss"] == 3400.0

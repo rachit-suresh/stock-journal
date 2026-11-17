@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime, timezone
 import html
@@ -74,8 +74,25 @@ class TradeUpdate(BaseModel):
             return v
         return html.escape(v.strip())
 
-class TradeResponse(TradeCreate):
-    id: str = Field(..., alias="id")
+class TradeResponse(BaseModel):
+    """Read model for persisted trades.
 
-    model_config = ConfigDict(populate_by_name=True)
+    Mirrors the wire fields but deliberately carries none of the input
+    validators: stored text is already html-escaped, so re-running the
+    sanitizers on the way out would double-escape it.
+    """
+    id: str
+    symbol: str
+    side: str
+    price: float
+    stopLoss: Optional[float] = None
+    shares: int
+    pfMatrix: Optional[float] = None
+    rsMatrix: Optional[float] = None
+    xPercentage: Optional[float] = None
+    strategy: str = "Uncategorized"
+    emotion: str = "Neutral"
+    mistakes: List[str] = Field(default_factory=lambda: ["None"])
+    notes: Optional[str] = ""
+    date: Optional[str] = None
 

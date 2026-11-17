@@ -118,3 +118,33 @@ def test_journal_overview_and_reset():
     res_reset = client.post("/api/journal/reset")
     assert res_reset.status_code == 200
     assert res_reset.json()["success"] is True
+
+
+def test_prices_endpoint_reports_freshness_metadata():
+    res = client.get("/api/prices?tokens=UNSEENKEY")
+    body = res.json()
+
+    assert body["data"]["UNSEENKEY"] == 100.0
+    assert body["meta"]["UNSEENKEY"] == {"as_of": None, "stale": True}
+    assert isinstance(body["timestamp"], int)
+
+
+def test_update_trade_clears_optional_fields():
+    created = client.post("/api/trades", json={
+        "symbol": "WIPRO",
+        "side": "BUY",
+        "price": 450.0,
+        "shares": 10,
+        "stopLoss": 440.0,
+    }).json()["data"]
+
+    res = client.put(f"/api/trades/{created['id']}", json={"stopLoss": None})
+
+    assert res.status_code == 200
+    assert res.json()["data"]["stopLoss"] is None
+
+
+def test_legacy_journal_compat_routes_removed():
+    assert client.post("/api/journal?action=reset").status_code == 405
+    assert client.put("/api/journal?id=trade_1").status_code == 405
+    assert client.delete("/api/journal?id=trade_1").status_code == 405

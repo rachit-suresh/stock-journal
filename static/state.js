@@ -257,11 +257,22 @@ class StateManager {
     this.trades[index] = updated;
     this.syncTrades(this.trades);
 
+    // Empty optional inputs mean "clear this field" (SPEC-PER-5), so they are
+    // sent as explicit nulls instead of "" — an empty string fails validation.
+    const toNullableNumber = (v) => (v === '' || v === null || v === undefined ? null : parseFloat(v));
+    const payload = {
+      ...updatedFields,
+      stopLoss: toNullableNumber(updatedFields.stopLoss),
+      pfMatrix: toNullableNumber(updatedFields.pfMatrix),
+      rsMatrix: toNullableNumber(updatedFields.rsMatrix),
+      xPercentage: toNullableNumber(updatedFields.xPercentage),
+    };
+
     // Asynchronous backend edit
     fetch(`${getBaseUrl()}/api/trades/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedFields)
+      body: JSON.stringify(payload)
     }).catch(err => console.error("Failed to sync edited trade with backend:", err));
 
     return updated;
