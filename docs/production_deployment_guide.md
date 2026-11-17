@@ -30,14 +30,28 @@ MONGO_DB_NAME=stock_journal
 # CORS Security (Restrict API calls to Vercel and Localhost)
 ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:8000
 
+# Identity (Clerk) — the issuer URL shown in Clerk → API keys / JWT verification
+ENV=production
+CLERK_ISSUER=https://<instance>.clerk.accounts.dev
+AUTH_DISABLED=false
+
 # Upstox Credentials (Optional: Leave blank to auto-run in MOCK mode)
-UPSTOX_ACCESS_TOKEN=your_upstox_oauth_access_token
+UPSTOX_ACCESS_TOKEN=your_upstox_analytics_access_token
 
 # Streamer Mode (Set to true for initial deployment before obtaining a live access token)
 MOCK_STREAMER=true
 
-# Instrument Keys to Stream (NSE Equities: SBIN, PNB, TCS, INFY, WIPRO)
+# Instrument Keys streamed for every account that has not saved a watchlist
 TOKENS=NSE_EQ|INE062A01020,NSE_EQ|INE160A01022,NSE_EQ|INE467I01027,NSE_EQ|INE009A01021,NSE_EQ|INE075A01022
+
+# Abuse limits (optional overrides; these are the defaults)
+MUTATION_RATE_LIMIT_PER_MINUTE=60
+MAX_TRADES_PER_USER=2000
+MAX_STRATEGIES_PER_USER=50
+MAX_EMOTIONS_PER_USER=50
+MAX_WATCHLIST_KEYS=25
+WATCHLIST_TTL_SECONDS=3600
+STREAMER_SYNC_SECONDS=15
 ```
 
 #### Frontend (Vercel Project Environment Variables)
@@ -46,19 +60,33 @@ TOKENS=NSE_EQ|INE062A01020,NSE_EQ|INE160A01022,NSE_EQ|INE467I01027,NSE_EQ|INE009
 FASTAPI_BACKEND_URL=https://stock-journal-xenm.onrender.com
 ```
 
+`window.CLERK_PUBLISHABLE_KEY` is **not** an env var on Vercel: it is set inside `static/index.html` (it is public by design). Leaving it empty keeps the UI in dev mode, which will fail against a production API that requires a token.
+
+### Clerk Setup (one-time, ~5 minutes)
+1. Create an application at [dashboard.clerk.com](https://dashboard.clerk.com) (name it e.g. `stock-journal`).
+2. **User & Authentication → Email, phone, username**: enable **Email address** and add **Google** as a social connection.
+3. **Configure → Restrictions**: keep sign-up open (the app is designed for open signup), and leave "Require email verification" on.
+4. **Configure → Paths**: leave the hosted pages enabled, or set `Sign-in URL` / `Sign-up URL` to your Vercel domain if you prefer the hosted flow.
+5. **API keys**:
+   - Copy the **Publishable key** (`pk_test_…`) into `static/index.html` → `window.CLERK_PUBLISHABLE_KEY`.
+   - Copy the **Issuer** (`https://<instance>.clerk.accounts.dev`) into Render as `CLERK_ISSUER`. It is also the `iss` claim in the JWKS, so a mismatch means every token is rejected with `401`.
+6. **Configure → Domains / Allowed origins**: add `https://<your-app>.vercel.app` (and `http://localhost:8000` while testing). Clerk refuses to mint sessions for unlisted origins.
+
 ---
 
 ## 2. Pre-Deployment Verification Checklist
 
 Before pushing to production, verify all pre-flight checks:
 
-- [x] **Dependencies Cleaned**: `requirements.txt` contains clean production stack (`fastapi`, `uvicorn`, `motor`, `pymongo`, `upstox-python-sdk`, `websocket-client`, `pytest`, `pytest-asyncio`, `httpx`).
+- [x] **Dependencies Cleaned**: `requirements.txt` contains the production stack (`fastapi`, `uvicorn`, `motor`, `pymongo`, `upstox-python-sdk`, `websocket-client`, `PyJWT[crypto]`, `pytest`, `pytest-asyncio`, `httpx`).
 - [x] **Python Package Initialization**: `__init__.py` markers present in all subpackages in `app/` and `tests/`.
-- [x] **Automated Test Suite**: Run `python -m pytest -v` to ensure 100% test pass rate (18/18 tests passing).
+- [x] **Automated Test Suite**: `python -m pytest -q` → **56 passed** (auth, tenancy, caps, watchlist, streaming, repositories, API).
 - [x] **Environment Secrets Ignored**: `.gitignore` configured to exclude `.env`, `.pytest_cache/`, `__pycache__/`, and `.venv/`.
 - [x] **Vercel API Proxy Rewrites**: `vercel.json` configured with `/api/:path*` proxy rule to forward requests server-side to Render.
-- [x] **CORS Security Enforced**: `CORSMiddleware` in `main.py` uses `ALLOWED_ORIGINS` setting from `app/core/config.py`.
+- [x] **CORS Security Enforced**: `CORSMiddleware` in `main.py` uses `ALLOWED_ORIGINS` with `allow_credentials=False`.
+- [x] **Auth Fail-Closed**: `ENV=production` + `AUTH_DISABLED=true` aborts startup; a missing `CLERK_ISSUER` answers `401` instead of opening the API.
 - [x] **Database Active Ping Validation**: MongoDB connection runs `await client.admin.command('ping')` on startup to verify connectivity.
+- [x] **Owner Indexes Created**: `ensure_indexes()` builds the partial unique indexes on startup (failures are logged, not fatal).
 - [x] **Server-Side Input Sanitization**: Pydantic models sanitize ticker symbols, validate trade sides, and HTML-escape user notes and categories.
 - [x] **Streamer Thread Fault Isolation**: Background WebSocket streamer runs inside an isolated daemon thread, preventing event loop blocking.
 
@@ -79,12 +107,14 @@ Before pushing to production, verify all pre-flight checks:
    ```
    *(Note: Render automatically injects `$PORT` behind the scenes).*
 6. **Environment Variables**:
-   Add `MONGO_URI`, `MONGO_DB_NAME`, `ALLOWED_ORIGINS`, `MOCK_STREAMER=true` (or `UPSTOX_ACCESS_TOKEN` when available).
+   Add `MONGO_URI`, `MONGO_DB_NAME`, `ALLOWED_ORIGINS`, `ENV=production`, `CLERK_ISSUER`, `AUTH_DISABLED=false`, and either `MOCK_STREAMER=true` or `UPSTOX_ACCESS_TOKEN`.
+7. **Health Check Path**: `/health` (public; returns auth mode + streamer state).
 
 ### Render Free Tier Behavior & Keep-Alive Strategy
 - **Inactivity Sleep**: Render free Web Services spin down after 15 minutes of zero HTTP traffic.
 - **Trading Hours Activity**: Continuous frontend price polling (`GET /api/prices` every 2.5s) keeps the server active 100% of the time while your browser tab is open.
-- **Optional 24/7 Zero-Sleep Keep-Alive**: Use a free uptime monitoring service like [UptimeRobot](https://uptimerobot.com) to ping `https://stock-journal-xenm.onrender.com/api/prices?tokens=NSE_EQ%7CINE062A01020` every 10 minutes.
+- **Optional 24/7 Zero-Sleep Keep-Alive**: Use a free uptime monitoring service like [UptimeRobot](https://uptimerobot.com) to ping `https://stock-journal-xenm.onrender.com/health` every 10 minutes (public, so no token is needed — `/api/prices` now requires authentication and would answer `401`).
+- **Counters reset on spin-down**: the rate-limit buckets and the watchlist registry are in memory, so a sleeping instance forgets them. Clients repopulate the registry on their next `GET /api/watchlist`, and the limiter simply starts a fresh window.
 
 ---
 
@@ -100,7 +130,10 @@ Before pushing to production, verify all pre-flight checks:
 4. Environment Variables:
    - **Key**: `FASTAPI_BACKEND_URL`
    - **Value**: `https://stock-journal-xenm.onrender.com`
-5. Click **Deploy**.
+5. Edit `static/index.html` and set `window.CLERK_PUBLISHABLE_KEY = "pk_test_…";` (the empty default is dev mode). Commit → Vercel redeploys.
+6. Click **Deploy**.
+
+> The static site is served from `static/`, so every UI change ships with a Vercel deploy. Bump the `?v=` query strings in `index.html` when you change CSS/JS to defeat browser caching.
 
 ---
 
@@ -141,3 +174,22 @@ Before pushing to production, verify all pre-flight checks:
   ```env
   ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:8000
   ```
+
+### Issue 4: Every API Call Returns `401`
+- **Symptom**: the UI shows the sign-in gate, or `Sign-in is unavailable right now`; `/health` reports `"auth": "clerk"` but requests fail.
+- **Cause** (in order of likelihood):
+  1. `CLERK_ISSUER` missing or not the issuer of the key in `index.html` (two different Clerk instances, or the `…clerk.accounts.dev` host copied from another project).
+  2. The publishable key in `index.html` still empty → the UI runs in dev mode and sends no token.
+  3. The Vercel origin is missing from Clerk's allowed origins, so no session can be minted.
+  4. A stale token: the UI signs out and reloads automatically; if it loops, check the browser console for the Clerk error.
+- **Verify**: `curl https://<render-host>/health` must return `"auth": "clerk"`; then `curl -i https://<render-host>/api/journal` must return `401` with a JSON detail. A `500` with "AUTH_DISABLED is not allowed when ENV=production" means the env var is still `true`.
+- **Local dev**: set `AUTH_DISABLED=true` and leave `CLERK_PUBLISHABLE_KEY` empty to skip Clerk entirely.
+
+### Issue 5: Signed In, But The Journal Is Empty After A Refresh
+- **Cause**: you are signed in with a different account than the one that created the data, or `AUTH_DISABLED` was flipped without clearing `localStorage` (dev bypass uses the fixed `dev-local` subject).
+- **Fix**: check `/health` → `auth`, and the sidebar account row (the Clerk email). Sign out and back in — sign-out clears `stock_journal_*` keys by design.
+
+### Issue 6: Watchlist Instrument Never Shows A Price
+- **Cause**: the streamer had not yet re-synced when you looked (up to `STREAMER_SYNC_SECONDS`), the key format is wrong (`NSE_EQ|INE002A01018`), or the Upstox token lacks that segment.
+- **Verify**: `GET /health` → `streamer.connected`; `GET /api/prices?tokens=<your key>` should return a value that stops changing if the feed is dead (`meta.stale: true`).
+

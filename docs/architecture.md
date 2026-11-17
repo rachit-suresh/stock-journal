@@ -19,14 +19,20 @@ graph TD
     subgraph Monolith["FastAPI Monolith Process (Container)"]
         A["Lifespan Event"] -->|"1. Async Motor Connect"| B[("MongoDB Database: stock_journal")]
         A -->|"2. Spawn Daemon Thread"| C["Market Data Streamer Daemon"]
+        A -->|"3. Create Owner Indexes"| B
 
         C -->|"Pushes Ticks"| D["Thread-Safe PriceCache"]
 
+        Z["get_current_user JWT Guard"] -->|"Gates every /api route"| E
         E["Master APIRouter"] --> F["Prices Endpoint /api/prices"]
         E --> G["Trades Endpoint /api/trades"]
         E --> H["Strategies Endpoint /api/strategies"]
         E --> I["Emotions Endpoint /api/emotions"]
         E --> J["Journal Endpoint /api/journal"]
+        E --> W["Watchlist Endpoint /api/watchlist"]
+
+        W -->|"Publishes owner keys"| Y["SubscriptionRegistry"]
+        Y -->|"Diff applied every 15 s"| C
 
         F -->|"Batch Read"| D
         G -->|"Delegates"| K["ITradeRepository Interface"]
@@ -50,7 +56,28 @@ graph TD
 
     F -.->|"3. JSON prices, polled every 2.5s"| S
     E -.->|"4. REST JSON responses"| S
+    S -.->|"5. Bearer session JWT on every call"| Z
 ```
+
+### 1.2 Identity & Tenancy Pipeline (v1.4)
+
+Clerk owns credentials and session issuance; this process owns none of it. The browser obtains a short-lived JWT from Clerk's hosted widget, sends it as `Authorization: Bearer …`, and the API verifies it statelessly against the cached JWKS. The `sub` claim becomes the tenancy key that every repository filters on.
+
+```mermaid
+graph LR
+    U["Browser"] -->|"1. Sign in"| CL["Clerk Hosted Auth"]
+    CL -->|"2. Session JWT"| U
+    U -->|"3. Bearer token"| G["get_current_user"]
+    G -->|"4. Fetch JWKS once"| JW["Clerk JWKS endpoint"]
+    G -->|"5. UserContext sub + email"| F["Repository factories"]
+    F -->|"6. owner_id = sub"| R["Mongo repositories"]
+    R -->|"7. Filtered reads and writes"| DB[("MongoDB Atlas")]
+    G -.->|"Dev only: AUTH_DISABLED"| DEV["Fixed dev-local subject"]
+    DEV -.-> F
+```
+
+- **Fail-closed:** no `CLERK_ISSUER` → every `/api/*` call gets `401`; `AUTH_DISABLED=true` in `ENV=production` → startup `RuntimeError` (and a `500` if it somehow reaches the dependency).
+- **Foreign ids:** queries are owner-scoped, so another account's document simply does not match → `404`, never `403`.
 
 ---
 
@@ -288,15 +315,17 @@ classDiagram
 ## 6. Security, Environment Resolution & Deployment Topology
 
 ### 6.1 CORS Security Policy (`ALLOWED_ORIGINS`)
-FastAPI mounts `CORSMiddleware` configured dynamically via `Settings.get_allowed_origins()` in `app/core/config.py`.
+FastAPI mounts `CORSMiddleware` configured dynamically via `Settings.get_allowed_origins()` in `app/core/config.py`, with `allow_credentials=False` (bearer tokens travel in the `Authorization` header, and a wildcard origin cannot be combined with credentials anyway).
 - **Development**: Accepts wildcard `*` or `http://localhost:8000`.
 - **Production**: Accepts comma-separated domain whitelists defined via the `ALLOWED_ORIGINS` environment variable (e.g. `https://your-app.vercel.app,http://localhost:8000`).
 
+CORS is **not** the authorization boundary: identity is enforced per request by `get_current_user` (see 1.2), so an origin that slips through the allowlist still needs a valid Clerk session for another account's data.
+
 ### 6.2 Frontend Dynamic API Resolution (`FASTAPI_BACKEND_URL`)
-Frontend assets (`static/state.js`, `static/mockApi.js`, `static/index.html`) dynamically resolve the target backend endpoint using the following fallback chain:
-1. `window.FASTAPI_BACKEND_URL` (injected via Vercel Environment Variables or script configuration).
-2. `window.API_BASE_URL` (legacy fallback).
-3. Relative URL `""` (used when the frontend is served directly by FastAPI on Render).
+`static/api.js` is the single place that resolves the backend host and attaches the session token:
+1. `window.FASTAPI_BACKEND_URL` (set in `static/index.html`, or injected by the host).
+2. Relative URL `""` (used when the frontend is served directly by FastAPI on Render).
+3. `Authorization: Bearer <Clerk session JWT>` is added on every call; a `401` signs the user out and reloads into the sign-in gate.
 
 ### 6.3 Vercel Schema Compliance (`vercel.json`)
 The Vercel deployment configuration enforces strict compliance with Vercel v2 schema rules:
@@ -311,4 +340,17 @@ The Vercel deployment configuration enforces strict compliance with Vercel v2 sc
   ]
 }
 ```
+
+### 6.4 Authentication Environment Matrix
+
+| Variable | Local dev | Render production |
+| --- | --- | --- |
+| `ENV` | `development` (default) | `production` |
+| `CLERK_ISSUER` | empty (dev bypass) | `https://<instance>.clerk.accounts.dev` |
+| `AUTH_DISABLED` | `true` for a Clerk-free loop | `false` (a `true` here aborts startup) |
+| `DEV_USER_ID` | `dev-local` (default) | unused |
+| `ALLOWED_ORIGINS` | `*` | the exact Vercel origin |
+| `window.CLERK_PUBLISHABLE_KEY` (in `index.html`) | empty → dev mode | `pk_test_…` / `pk_live_…` |
+
+`GET /health` reports `auth` (`clerk` or `dev-bypass`) plus the streamer state, so a misconfiguration is visible without reading logs.
 
