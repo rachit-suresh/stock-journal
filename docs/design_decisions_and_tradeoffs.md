@@ -22,8 +22,8 @@ Polling standard REST APIs for ticker updates across Indian stock exchanges is n
 
 | Provider | Transport Protocol | Pricing Model | Latency | Key Technical & Operational Characteristics |
 | --- | --- | --- | --- | --- |
-| **Angel One SmartAPI** | WebSocket 2.0 (`wss://`) & REST | **₹0 / month** | Sub-second | **Primary Choice.** Direct JSON/binary stream. Free access to live feeds, historical data, and SDKs across Equity and F&O. |
-| **Upstox API v3** | WebSocket & REST | **₹0 / month** | Sub-second | Native **Protocol Buffer (Protobuf)** binary serialization. Drastically reduces network payload size compared to JSON. |
+| **Upstox API v3** | WebSocket & REST | **₹0 / month** | Sub-second | **Primary Choice.** Official `upstox-python-sdk` exposes a JSON-decoded `MarketDataStreamerV3`; free live feeds with OAuth-token auth. |
+| **Angel One SmartAPI** | WebSocket 2.0 (`wss://`) & REST | **₹0 / month** | Sub-second | Viable alternative (previous implementation): binary ticks converted from paise, daily TOTP login. |
 | **DhanHQ Data API** | WebSocket & REST | **₹499 / month** (+ GST) | Tick-by-tick | Enterprise reliability; supports Level 3 (20-depth order book) streaming capabilities. |
 | **Zerodha Kite Connect** | Binary WebSocket Ticker & REST | **₹500 / month** | Sub-second | Industry-standard developer stability, but mandates a fixed monthly subscription even for read-only ticker usage. |
 | **nsepython / Web Scraping** | REST Polling | **₹0 / month** | 3s–15s | Reverse-engineered internal NSE endpoints. High risk of immediate IP bans by Akamai WAF. |
@@ -51,7 +51,7 @@ Evaluating real-time market data delivery requires decoupling three distinct lif
 [Broker WS Engine] <====== (wss:// Direct) ======> [Client App / Browser]
 ```
 
-* **Mechanism:** The browser establishes a direct WebSocket connection to Angel One / Upstox using broker client credentials.
+* **Mechanism:** The browser establishes a direct WebSocket connection to Upstox using broker client credentials.
 * **Critique (CRITICAL FAULT - Anti-Pattern):**
   * **Credential Exposure:** Broker secret keys, API tokens, and JWTs must be shipped to the client browser, permitting total account compromise via simple asset reverse-engineering.
   * **Upstream Hard Connection Limits:** Brokers enforce strict limits on concurrent WebSocket sessions per API key (typically 1 to 5 connections). Multiple open tabs trigger rate-limit disconnects.
@@ -179,11 +179,11 @@ Because serverless platforms cannot run long-lived processes, **the Ingestion Wo
 +-----------------------------------------------------------------------------------+
 |  1. INGESTION WORKER (Always-On Stateful Process)                                 |
 |  (Hosted on Render / Railway / Fly.io as Docker container)                        |
-|  - Holds WebSocket 2.0 connection to Angel One SmartAPI                           |
+|  - Holds WebSocket connection to Upstox market data feed v3                       |
 |  - Decodes real-time market ticks                                                 |
 |  - Writes ticks directly to Upstash Redis or In-Memory Cache                      |
 +----------------------------------------+------------------------------------------+
-                                         | Writes (SET stock:3045:ltp 580.20)
+                                         | Writes (SET price:NSE_EQ|INE062A01020 580.20)
                          +---------------+---------------+
                          |      State Cache Layer       |
                          +---------------+---------------+
@@ -195,16 +195,12 @@ Because serverless platforms cannot run long-lived processes, **the Ingestion Wo
 +-----------------------------------------------------------------------------------+
 ```
 
-### SmartAPI Daily Authentication Handshake Sequence
+### Upstox Analytics Authentication Sequence (no daily refresh)
 
-1. **Programmatic TOTP Generation:** Local Process.  
-   Pass the saved TOTP secret key into `pyotp.TOTP(SECRET_KEY).now()` to obtain a live 6-digit 2FA token.
-2. **Authenticate Session:** REST `POST /rest/auth/angelbroking/user/v1/loginByPassword`.  
-   Send `clientcode`, `password`, `api_key`, and `totp` to generate a 24-hour `jwtToken` and `feedToken`.
-3. **Establish WebSocket 2.0 Connection:** `wss://smartapisocket.angelone.in/smart-stream`.  
-   Initialize `SmartWebSocketV2` passing `jwtToken`, `apiKey`, `clientCode`, and `feedToken` in connection headers.
-4. **Subscribe to Tokens:** Subscription Mode 1 (LTP).  
-   Dispatch subscription JSON for specified instrument tokens (e.g., Token `3045` for SBIN-EQ, Token `2885` for PNB-EQ).
+1. **Obtain the token:** Generate the **Analytics Access Token** in the Upstox developer console (`My Apps → Analytics`). It is long-lived (one year), read-only, and covers the Market Data and Real-time & Streaming APIs — so no OAuth app, redirect URI, client secret or interactive login exists in the flow. The token is **not** renewable in-process: renew it manually before the expiry date, otherwise the stream stays down until the value is replaced.
+2. **Build the SDK client:** `upstox_client.Configuration()` with `access_token`, then `ApiClient(configuration)`.
+3. **Stream:** `MarketDataStreamerV3(api_client)`, subscribe `TOKENS` in `"ltpc"` mode on the `open` event, and read `feeds[instrument_key].ltpc.ltp` from each decoded `live_feed` message. `market_info` messages are ignored.
+4. **Retry semantics:** WebSocket errors are logged; the daemon retries every 10 s (`main.py`). With a one-year token this fires on revocation or expiry rather than nightly — GAP-7 is closed, and `GET /api/prices` flags stale ticks via `meta.stale`.
 
 ---
 
@@ -226,10 +222,10 @@ Vercel natively supports deploying custom OCI images via `Dockerfile.vercel`, bu
 |                            |            |               | offers faster builds &  |
 |                            |            |               | zero registry overhead. |
 +----------------------------+------------+---------------+-------------------------+
-| SmartAPI Ingestion Worker  | Render /   | YES (Use)     | Locks Python runtime,   |
-|                            | Railway    |               | `pyotp`, and `redis`    |
-|                            |            |               | dependencies for 24/7   |
-|                            |            |               | execution.              |
+| Upstox Ingestion Worker    | Render /   | YES (Use)     | Locks Python runtime,   |
+|                            | Railway    |               | `upstox-python-sdk`,    |
+|                            |            |               | and `motor` deps for    |
+|                            |            |               | 24/7 execution.         |
 +----------------------------+------------+---------------+-------------------------+
 ```
 
@@ -274,7 +270,7 @@ In `app/streaming/price_cache.py`, the `PriceCache` uses a standard **`threading
 
 #### **Technical Rationale & Trade-offs**
 - **Why NOT `asyncio.Lock`?**  
-  The market streamer (`AngelOneSmartApiStreamer` / `MockMarketStreamer`) runs in a separate **synchronous OS daemon thread** to isolate WebSocket callbacks. An `asyncio.Lock` is bound to a single asyncio event loop thread; attempting to acquire an `asyncio.Lock` from an OS worker thread throws `RuntimeError: There is no current event loop in thread`.
+  The market streamer (`UpstoxMarketStreamer` / `MockMarketStreamer`) runs in a separate **synchronous OS daemon thread** to isolate WebSocket callbacks. An `asyncio.Lock` is bound to a single asyncio event loop thread; attempting to acquire an `asyncio.Lock` from an OS worker thread throws `RuntimeError: There is no current event loop in thread`.
 - **Why NOT Redis?**  
   Redis requires inter-process network calls (TCP sockets / HTTP requests), introducing 1–10 ms latency per tick update.
 - **Why `threading.Lock()`?**  
@@ -346,12 +342,12 @@ The application design adheres to **SOLID design principles**:
    - `MongoTradeRepository`: Responsible exclusively for MongoDB trade collection queries.  
    - `JournalService`: Responsible solely for business orchestration and initial database seeding.  
    - `PriceCache`: Responsible strictly for thread-safe in-memory tick storage.  
-   - `AngelOneSmartApiStreamer`: Handles WebSocket connections and binary tick parsing only.
+   - `UpstoxMarketStreamer`: Handles the WebSocket connection, subscription, and feed decoding only.
 2. **Open/Closed Principle (OCP) & Strategy Pattern:**  
-   - Upstream market data ingestion depends on an abstract base class (`IMarketDataStreamer`). Switching from `AngelOneSmartApiStreamer` to `UpstoxStreamer` or `ZerodhaStreamer` requires zero structural code modifications to downstream cache or API layers.
+   - Upstream market data ingestion depends on an abstract base class (`IMarketDataStreamer`). Switching from `UpstoxMarketStreamer` to `AngelOneSmartApiStreamer` or `ZerodhaStreamer` requires zero structural code modifications to downstream cache or API layers.
    - Storage repositories depend on abstract interfaces (`ITradeRepository`), allowing database engine additions without modifying route handlers.
 3. **Liskov Substitution Principle (LSP):**  
-   - Both `AngelOneSmartApiStreamer` and `MockMarketStreamer` are fully interchangeable instances of `IMarketDataStreamer`.
+   - Both `UpstoxMarketStreamer` and `MockMarketStreamer` are fully interchangeable instances of `IMarketDataStreamer`.
 4. **Interface Segregation Principle (ISP):**  
    - Granular, focused repository interfaces (`ITradeRepository`, `IStrategyRepository`, `IEmotionRepository`) instead of one monolithic database interface.
 5. **Dependency Inversion Principle (DIP):**  

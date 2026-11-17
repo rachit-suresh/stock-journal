@@ -12,37 +12,44 @@ The system is designed as a **Production-Grade Layered Monolith** running inside
 
 ```mermaid
 graph TD
-    subgraph FastAPI Monolith Process (Container)
-        A[Lifespan Event] -->|1. Async Motor Connect| B[(MongoDB Database: stock_journal)]
-        A -->|2. Spawn Daemon Thread| C[Market Data Streamer Daemon]
-        
-        C -->|Pushes Ticks| D[Thread-Safe PriceCache]
-        
-        E[Master APIRouter] --> F[Prices Endpoint /api/prices]
-        E --> G[Trades Endpoint /api/trades]
-        E --> H[Strategies Endpoint /api/strategies]
-        E --> I[Emotions Endpoint /api/emotions]
-        E --> J[Journal Endpoint /api/journal]
-        
-        F -->|Batch Read| D
-        G -->|Delegates| K[ITradeRepository Interface]
-        H -->|Delegates| L[IStrategyRepository Interface]
-        I -->|Delegates| M[IEmotionRepository Interface]
-        J -->|Delegates| N[JournalService Orchestrator]
-        
-        K ..|> O[MongoTradeRepository]
-        L ..|> P[MongoStrategyRepository]
-        M ..|> Q[MongoEmotionRepository]
-        
-        O -->|Async Motor Queries| B
-        P -->|Async Motor Queries| B
-        Q -->|Async Motor Queries| B
-        
-        R[StaticFiles Engine] -->|Serves Assets| S[Client Dashboard UI: static/]
+    subgraph Browser["Browser Dashboard"]
+        S["Client Dashboard UI (static/)"]
     end
 
-    S -->|2.5s Price Poll| F
-    S -->|AJAX Fetch / REST CRUD| E
+    subgraph Monolith["FastAPI Monolith Process (Container)"]
+        A["Lifespan Event"] -->|"1. Async Motor Connect"| B[("MongoDB Database: stock_journal")]
+        A -->|"2. Spawn Daemon Thread"| C["Market Data Streamer Daemon"]
+
+        C -->|"Pushes Ticks"| D["Thread-Safe PriceCache"]
+
+        E["Master APIRouter"] --> F["Prices Endpoint /api/prices"]
+        E --> G["Trades Endpoint /api/trades"]
+        E --> H["Strategies Endpoint /api/strategies"]
+        E --> I["Emotions Endpoint /api/emotions"]
+        E --> J["Journal Endpoint /api/journal"]
+
+        F -->|"Batch Read"| D
+        G -->|"Delegates"| K["ITradeRepository Interface"]
+        H -->|"Delegates"| L["IStrategyRepository Interface"]
+        I -->|"Delegates"| M["IEmotionRepository Interface"]
+        J -->|"Delegates"| N["JournalService Orchestrator"]
+
+        K -.->|"implements"| O["MongoTradeRepository"]
+        L -.->|"implements"| P["MongoStrategyRepository"]
+        M -.->|"implements"| Q["MongoEmotionRepository"]
+
+        O -->|"Async Motor Queries"| B
+        P -->|"Async Motor Queries"| B
+        Q -->|"Async Motor Queries"| B
+
+        %% Invisible link: keeps StaticFiles inside the process frame while its
+        %% only visible edge points out to the browser.
+        E ~~~ R
+        R["StaticFiles Engine"] -->|"Serves Assets"| S
+    end
+
+    F -.->|"3. JSON prices, polled every 2.5s"| S
+    E -.->|"4. REST JSON responses"| S
 ```
 
 ---
@@ -53,22 +60,22 @@ graph TD
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Exchange as Angel One WebSocket V2 / Mock
+    participant Exchange as Upstox Feed v3 / Mock
     participant Streamer as Streamer Daemon Thread
     participant Cache as Thread-Safe PriceCache
     participant Client as Frontend Dashboard UI
     participant API as FastAPI GET /api/prices
 
-    Exchange->>Streamer: 1. Send Raw Price Tick (Paise)
-    Streamer->>Streamer: 2. Convert Paise to Rupees (ltp / 100.0)
-    Streamer->>Cache: 3. set_price(token, ltp) [Acquires Lock]
+    Exchange->>Streamer: 1. Decoded live_feed Message
+    Streamer->>Streamer: 2. Extract LTP from feeds[instrument_key].ltpc
+    Streamer->>Cache: 3. set_price(instrument_key, ltp) acquires lock
     Cache-->>Streamer: 4. Lock Released
     loop Every 2.5 Seconds
-        Client->>API: 5. GET /api/prices?tokens=3045,2885
-        API->>Cache: 6. get_batch_prices(["3045", "2885"]) [Acquires Lock]
-        Cache-->>API: 7. Return Price Dictionary
-        API-->>Client: 8. JSON Response {"data": {...}, "timestamp": 1774...}
-        Client->>Client: 9. Flash Price Tickers & Re-evaluate Position Unrealized P&L
+        Client->>API: 5. GET /api/prices?tokens=instrument_keys
+        API->>Cache: 6. get_batch_prices(tokens) acquires lock
+        Cache-->>API: 7. Return LTP dictionary
+        API-->>Client: 8. JSON with data, meta and timestamp
+        Client->>Client: 9. Flash Price Tickers and Re-evaluate Unrealized P&L
     end
 ```
 
@@ -193,15 +200,13 @@ classDiagram
         +on_tick_received(token: str, ltp: float) None*
     }
 
-    class AngelOneSmartApiStreamer {
-        -api_key: str
-        -client_code: str
-        -password: str
-        -totp_secret: str
-        -sws: SmartWebSocketV2
+    class UpstoxMarketStreamer {
+        -access_token: str
+        -streamer: MarketDataStreamerV3
         +authenticate() bool
         +connect_and_stream(tokens: list[str]) None
         +on_tick_received(token: str, ltp: float) None
+        +_extract_ltp(feed: dict)$ float
     }
 
     class MockMarketStreamer {
@@ -212,7 +217,7 @@ classDiagram
         +on_tick_received(token: str, ltp: float) None
     }
 
-    IMarketDataStreamer <|.. AngelOneSmartApiStreamer
+    IMarketDataStreamer <|.. UpstoxMarketStreamer
     IMarketDataStreamer <|.. MockMarketStreamer
 ```
 
@@ -227,7 +232,7 @@ classDiagram
 - **Proof**: `IMarketDataStreamer` defines the streaming abstraction. Adding support for a new market data provider (e.g. `ZerodhaStreamer` or `InteractiveBrokersStreamer`) requires adding a new class implementing `IMarketDataStreamer` — **zero** changes to `price_cache.py` or `/api/prices` endpoints!
 
 ### Liskov Substitution Principle (LSP)
-- **Proof**: Both `AngelOneSmartApiStreamer` and `MockMarketStreamer` can be substituted into the background daemon thread transparently without the caller caring which implementation is running.
+- **Proof**: Both `UpstoxMarketStreamer` and `MockMarketStreamer` can be substituted into the background daemon thread transparently without the caller caring which implementation is running.
 
 ### Interface Segregation Principle (ISP)
 - **Proof**: Instead of creating a bloated `IGenericJournalRepository` with 30 methods, data access is divided into concise contracts: `ITradeRepository`, `IStrategyRepository`, and `IEmotionRepository`.

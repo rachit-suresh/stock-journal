@@ -6,16 +6,18 @@ This guide details everything required to configure, test, and deploy the Stock 
 
 ## 1. Environment Setup & Key Handling
 
-### Initial Deployment Strategy (Before Having SmartAPI Credentials)
-When deploying the application initially to Render or Vercel, **you may not yet have live Angel One SmartAPI credentials** (since API keys are granted after submitting your hosted domain URL).
+### Initial Deployment Strategy (Before Having an Upstox Access Token)
+When deploying the application initially to Render or Vercel, **you may not yet have an Upstox Analytics Access Token** (generated in the developer console under `My Apps → Analytics`; read-only, one-year validity, covers Market Data + Streaming — no OAuth app needed).
 
 The application is engineered to handle this scenario out-of-the-box:
-1. On initial deployment, leave `SMART_API_KEY`, `SMART_CLIENT_CODE`, `SMART_PASSWORD`, and `SMART_TOTP_SECRET` empty and set `MOCK_STREAMER=true`.
-2. The server will boot cleanly in **Mock Simulation Mode**, streaming realistic live price movements for stock tokens (`3045`, `2885`, `11536`, `1594`, `3456`).
-3. Once your cloud deployment URL is active and you receive your live SmartAPI key from Angel One:
-   - Add your live credentials (`SMART_API_KEY`, `SMART_CLIENT_CODE`, `SMART_PASSWORD`, `SMART_TOTP_SECRET`) to your environment variables.
+1. On initial deployment, leave `UPSTOX_ACCESS_TOKEN` empty and set `MOCK_STREAMER=true`.
+2. The server will boot cleanly in **Mock Simulation Mode**, streaming realistic live price movements for the default instrument keys (SBIN, PNB, TCS, INFY, WIPRO).
+3. Once you have your live Upstox access token:
+   - Add `UPSTOX_ACCESS_TOKEN` to your environment variables.
    - Set `MOCK_STREAMER=false`.
-   - On the next automatic deployment/restart, the server will seamlessly connect to Angel One's production WebSocket feed (`wss://smartapisocket.angelone.in/smart-stream`).
+   - On the next automatic deployment/restart, the server will seamlessly connect to Upstox's market data feed v3 WebSocket.
+
+> **Note:** the Analytics Access Token is valid for one year and is **read-only** (market data, streaming; no order placement). Set a calendar reminder to rotate it before expiry — the console shows the expiry date. When it lapses or is revoked, the streamer retries every 10 s with an invalid token and mock mode is not auto-restored, but `/api/prices` keeps serving the last ticks flagged `meta.stale: true`. Treat the token as a secret: it belongs in the Render environment (or local `.env`), never in `static/` or git.
 
 ### Environment Variables Matrix
 
@@ -28,17 +30,14 @@ MONGO_DB_NAME=stock_journal
 # CORS Security (Restrict API calls to Vercel and Localhost)
 ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:8000
 
-# Angel One SmartAPI Credentials (Optional: Leave blank to auto-run in MOCK mode)
-SMART_API_KEY=your_angel_one_api_key
-SMART_CLIENT_CODE=your_client_code
-SMART_PASSWORD=your_trading_password
-SMART_TOTP_SECRET=your_2fa_totp_secret_key
+# Upstox Credentials (Optional: Leave blank to auto-run in MOCK mode)
+UPSTOX_ACCESS_TOKEN=your_upstox_oauth_access_token
 
-# Streamer Mode (Set to true for initial deployment before obtaining live API keys)
+# Streamer Mode (Set to true for initial deployment before obtaining a live access token)
 MOCK_STREAMER=true
 
-# Instrument Tokens to Stream (NSE Equities: 3045=SBIN, 2885=PNB, 11536=TCS, 1594=INFY, 3456=WIPRO)
-TOKENS=3045,2885,11536,1594,3456
+# Instrument Keys to Stream (NSE Equities: SBIN, PNB, TCS, INFY, WIPRO)
+TOKENS=NSE_EQ|INE062A01020,NSE_EQ|INE160A01022,NSE_EQ|INE467I01027,NSE_EQ|INE009A01021,NSE_EQ|INE075A01022
 ```
 
 #### Frontend (Vercel Project Environment Variables)
@@ -53,7 +52,7 @@ FASTAPI_BACKEND_URL=https://stock-journal-xenm.onrender.com
 
 Before pushing to production, verify all pre-flight checks:
 
-- [x] **Dependencies Cleaned**: `requirements.txt` contains clean production stack (`fastapi`, `uvicorn`, `motor`, `pymongo`, `smartapi-python`, `pyotp`, `websocket-client`, `pytest`, `pytest-asyncio`, `httpx`).
+- [x] **Dependencies Cleaned**: `requirements.txt` contains clean production stack (`fastapi`, `uvicorn`, `motor`, `pymongo`, `upstox-python-sdk`, `websocket-client`, `pytest`, `pytest-asyncio`, `httpx`).
 - [x] **Python Package Initialization**: `__init__.py` markers present in all subpackages in `app/` and `tests/`.
 - [x] **Automated Test Suite**: Run `python -m pytest -v` to ensure 100% test pass rate (18/18 tests passing).
 - [x] **Environment Secrets Ignored**: `.gitignore` configured to exclude `.env`, `.pytest_cache/`, `__pycache__/`, and `.venv/`.
@@ -80,12 +79,12 @@ Before pushing to production, verify all pre-flight checks:
    ```
    *(Note: Render automatically injects `$PORT` behind the scenes).*
 6. **Environment Variables**:
-   Add `MONGO_URI`, `MONGO_DB_NAME`, `ALLOWED_ORIGINS`, `MOCK_STREAMER=true` (or live SmartAPI keys when available).
+   Add `MONGO_URI`, `MONGO_DB_NAME`, `ALLOWED_ORIGINS`, `MOCK_STREAMER=true` (or `UPSTOX_ACCESS_TOKEN` when available).
 
 ### Render Free Tier Behavior & Keep-Alive Strategy
 - **Inactivity Sleep**: Render free Web Services spin down after 15 minutes of zero HTTP traffic.
 - **Trading Hours Activity**: Continuous frontend price polling (`GET /api/prices` every 2.5s) keeps the server active 100% of the time while your browser tab is open.
-- **Optional 24/7 Zero-Sleep Keep-Alive**: Use a free uptime monitoring service like [UptimeRobot](https://uptimerobot.com) to ping `https://stock-journal-xenm.onrender.com/api/prices?tokens=3045` every 10 minutes.
+- **Optional 24/7 Zero-Sleep Keep-Alive**: Use a free uptime monitoring service like [UptimeRobot](https://uptimerobot.com) to ping `https://stock-journal-xenm.onrender.com/api/prices?tokens=NSE_EQ%7CINE062A01020` every 10 minutes.
 
 ---
 

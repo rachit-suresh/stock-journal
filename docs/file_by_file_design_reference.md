@@ -51,10 +51,10 @@ stock-journal/
 │   │   └── journal_service.py      # Business logic orchestrator & DB auto-seeding
 │   └── streaming/
 │       ├── __init__.py             # Streaming package marker
-│       ├── angel_one_streamer.py   # Angel One SmartAPI WebSocket 2.0 ticker engine
+│       ├── upstox_streamer.py      # Upstox market data feed v3 WebSocket ticker engine
 │       ├── base_streamer.py        # Abstract IMarketDataStreamer interface
 │       ├── mock_streamer.py        # Mock random-walk market data streamer
-│       └── price_cache.py          # Thread-safe in-memory price storage engine
+│       └── price_cache.py          # Thread-safe in-memory price storage with staleness metadata
 ├── docs/
 │   ├── architecture.md             # HLD, LLD, Class Diagrams, Sequence Workflows, SOLID proofs
 │   ├── design_decisions_and_tradeoffs.md # Executive design decisions & engineering tradeoffs
@@ -71,10 +71,12 @@ stock-journal/
 │   ├── __init__.py                 # Tests package marker
 │   ├── test_api_endpoints.py       # FastAPI HTTP route integration test suite
 │   ├── test_models.py              # Pydantic schema validation test suite
+│   ├── test_market_data.py         # Upstox feed parsing & price-cache tick tests
 │   ├── test_price_cache.py         # Multi-threaded price cache concurrency test suite
 │   └── test_repositories.py        # Repository CRUD & soft cascading update test suite
 ├── .gitignore                      # Git exclusion rules (.env, __pycache__, .pytest_cache)
 ├── main.py                         # FastAPI application entrypoint & Lifespan startup
+├── pytest.ini                      # Pytest configuration (`asyncio_mode = auto`)
 ├── requirements.txt                # Python package dependency manifest (logzero cleaned)
 └── vercel.json                     # Vercel deployment specification & /api/* proxy rewrites
 ```
@@ -91,19 +93,17 @@ Parses and validates environment variables using standard Python `os.getenv` def
 - **Attributes**:
   - `PROJECT_NAME` (`str`): Application title (`"Stock Journal Monolith"`).
   - `VERSION` (`str`): Version identifier (`"2.0.0"`).
-  - `API_KEY` (`str`): Angel One SmartAPI key (`SMART_API_KEY`).
-  - `CLIENT_CODE` (`str`): Angel One Client Code (`SMART_CLIENT_CODE`).
-  - `PASSWORD` (`str`): Angel One Trading Password (`SMART_PASSWORD`).
-  - `TOTP_SECRET` (`str`): 2FA TOTP secret (`SMART_TOTP_SECRET`).
+  - `UPSTOX_ACCESS_TOKEN` (`str`): Upstox Analytics Access Token (read-only, one-year validity, covers Market Data + Streaming) (`UPSTOX_ACCESS_TOKEN`).
   - `MOCK_STREAMER` (`bool`): Boolean flag enabling mock simulation mode (`MOCK_STREAMER`).
-  - `TOKENS_STR` (`str`): Comma-separated list of NSE tokens to stream (`TOKENS`).
+  - `TOKENS_STR` (`str`): Comma-separated list of Upstox instrument keys, e.g. `NSE_EQ|INE062A01020` (`TOKENS`).
+  - `PRICE_MAX_AGE_SECONDS` (`float`): Age after which a cached tick is reported as stale (`PRICE_MAX_AGE_SECONDS`, default `30`).
   - `ALLOWED_ORIGINS_STR` (`str`): Comma-separated CORS whitelist origins (`ALLOWED_ORIGINS`).
   - `MONGO_URI` (`str`): MongoDB connection string (`MONGO_URI`, default: `mongodb://localhost:27017`).
   - `MONGO_DB_NAME` (`str`): Target database name (`MONGO_DB_NAME`, default: `stock_journal`).
 - **Methods**:
   - `get_tokens() -> List[str]`: Splits `TOKENS_STR` by comma, strips whitespace, and returns cleaned token strings.
   - `get_allowed_origins() -> List[str]`: Parses `ALLOWED_ORIGINS_STR`. Returns `["*"]` if set to `"*"` or empty; otherwise returns split domain whitelist.
-  - `has_smart_api_credentials() -> bool`: Returns `True` only if `API_KEY`, `CLIENT_CODE`, `PASSWORD`, and `TOTP_SECRET` are all non-empty strings.
+  - `has_upstox_credentials() -> bool`: Returns `True` when `UPSTOX_ACCESS_TOKEN` is non-empty; drives mock-vs-live streamer selection.
 
 ---
 
@@ -189,20 +189,21 @@ Manages the lifecycle of the asynchronous Motor MongoDB client (`AsyncIOMotorCli
 
 ## 5. Streaming Subsystem (`app/streaming/`)
 
-- **`PriceCache`**: Thread-safe memory cache. `set_price(token, price)` locks `threading.Lock()` to write price; `get_batch_prices(tokens)` locks to fetch batch prices in nanoseconds.
-- **`AngelOneSmartApiStreamer`**: Connects to Angel One WebSocket 2.0 using TOTP authentication, parses binary ticks, converts integer paise to Rupees (`ltp / 100.0`), and writes updates to `PriceCache`.
-- **`MockMarketStreamer`**: Simulates real-time stock price movements using a random-walk algorithm ($\pm 0.4\%$) for Indian equity tokens (`3045`, `2885`, `11536`, `1594`, `3456`).
+- **`PriceCache`**: Thread-safe memory cache keyed by instrument key. `set_price(token, price)` stores `(ltp, timestamp)` under `threading.Lock()`; `get_batch_prices(tokens)` returns the last known LTP (default `100.0` for unknown keys); `get_batch_meta(tokens)` returns `as_of`/`stale` per key against `PRICE_MAX_AGE_SECONDS`.
+- **`UpstoxMarketStreamer`**: Wraps `upstox_client.MarketDataStreamerV3`; subscribes `TOKENS` in `"ltpc"` mode on open, decodes `{"type": "live_feed", "feeds": {...}}` messages, ignores `market_info`, and writes LTPs to `PriceCache`. The SDK import is lazy so mock mode runs without it.
+- **`MockMarketStreamer`**: Simulates real-time price movements using a random-walk algorithm ($\pm 0.4\%$) seeded for the five default instrument keys (`SBIN` 650, `PNB` 80, `TCS` 3500, `INFY` 1500, `WIPRO` 450).
 
 ---
 
 ## 6. Service & API Layer (`app/services/` & `app/api/`)
 
 - **`JournalService`**: Coordinates business logic and executes initial seed data loading if MongoDB collections are empty on first boot.
-- **`app/api/endpoints/prices.py`**: Returns real-time token price dictionary formatted with `"success": True, "data": {...}, "timestamp": ...`.
+- **`app/api/endpoints/prices.py`**: Returns the cached price dictionary as `{"success": True, "data": {instrument_key: ltp}, "meta": {instrument_key: {as_of, stale}}, "timestamp": ...}`.
 - **`app/api/endpoints/trades.py`**: Dedicated RESTful handlers (`GET /api/trades`, `POST /api/trades`, `GET /api/trades/{id}`, `PUT /api/trades/{id}`, `DELETE /api/trades/{id}`).
 - **`app/api/endpoints/strategies.py`**: Dedicated RESTful handlers (`GET /api/strategies`, `POST /api/strategies`, `DELETE /api/strategies/{name}`).
 - **`app/api/endpoints/emotions.py`**: Dedicated RESTful handlers (`GET /api/emotions`, `POST /api/emotions`, `DELETE /api/emotions/{name}`).
-- **`app/api/endpoints/journal.py`**: Overview, bulk reset, and bulk import endpoints with backwards-compatible fallbacks.
+- **`app/api/endpoints/journal.py`**: Overview, bulk reset, and bulk import endpoints. Legacy query-param compat routes were removed (GAP-3b); `/api/journal` exposes `GET` only.
+- **`app/models/responses.py`**: Pydantic response envelopes (`DataResponse[T]`, `MessageResponse`, `PricesResponse`, `JournalResponse`) wired as `response_model` on every route (GAP-8b).
 - **`app/api/router.py`**: Aggregates all endpoint routers into unified `api_router`.
 - **`main.py`**: FastAPI entrypoint, lifespan startup manager, static file server, CORS middleware, and dynamic `$PORT` environment parser.
 
