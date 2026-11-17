@@ -5,7 +5,7 @@ from app.repositories.memory.emotion_repository import MemoryEmotionRepository
 
 @pytest.mark.asyncio
 async def test_trade_repository_crud():
-    repo = MemoryTradeRepository()
+    repo = MemoryTradeRepository("user-a")
     
     # Create
     trade = await repo.create_trade({
@@ -35,7 +35,7 @@ async def test_trade_repository_crud():
 
 @pytest.mark.asyncio
 async def test_strategy_repository_duplicate_and_cascading_delete():
-    trade_repo = MemoryTradeRepository()
+    trade_repo = MemoryTradeRepository("user-a")
     await trade_repo.create_trade({
         "id": "t1",
         "symbol": "TCS",
@@ -45,7 +45,7 @@ async def test_strategy_repository_duplicate_and_cascading_delete():
         "strategy": "Gap Fill"
     })
 
-    strat_repo = MemoryStrategyRepository(["Gap Fill", "Breakout"], trade_repo=trade_repo)
+    strat_repo = MemoryStrategyRepository("user-a", ["Gap Fill", "Breakout"], trade_repo=trade_repo)
     
     # Duplicate check (case-insensitive)
     assert await strat_repo.add_strategy("gap fill") is False
@@ -61,7 +61,7 @@ async def test_strategy_repository_duplicate_and_cascading_delete():
 
 @pytest.mark.asyncio
 async def test_emotion_repository_duplicate_and_cascading_delete():
-    trade_repo = MemoryTradeRepository()
+    trade_repo = MemoryTradeRepository("user-a")
     await trade_repo.create_trade({
         "id": "t2",
         "symbol": "INFY",
@@ -71,7 +71,7 @@ async def test_emotion_repository_duplicate_and_cascading_delete():
         "emotion": "Anxious"
     })
 
-    emo_repo = MemoryEmotionRepository(["Anxious", "Disciplined"], trade_repo=trade_repo)
+    emo_repo = MemoryEmotionRepository("user-a", ["Anxious", "Disciplined"], trade_repo=trade_repo)
     
     # Duplicate check
     assert await emo_repo.add_emotion("ANXIOUS") is False
@@ -87,7 +87,7 @@ async def test_emotion_repository_duplicate_and_cascading_delete():
 
 
 async def test_update_trade_clears_field_when_explicitly_null():
-    repo = MemoryTradeRepository()
+    repo = MemoryTradeRepository("user-a")
     created = await repo.create_trade({
         "symbol": "SBIN",
         "side": "BUY",
@@ -103,7 +103,7 @@ async def test_update_trade_clears_field_when_explicitly_null():
 
 
 async def test_update_trade_leaves_absent_fields_untouched():
-    repo = MemoryTradeRepository()
+    repo = MemoryTradeRepository("user-a")
     created = await repo.create_trade({
         "symbol": "TCS",
         "side": "BUY",
