@@ -57,5 +57,12 @@ class PriceCache:
                 }
         return meta
 
+    def has_fresh_data(self) -> bool:
+        """True when at least one cached tick is newer than the freshness window."""
+        now = time.time()
+        with self._lock:
+            timestamps = [ts for _, ts in self._entries.values()]
+        return any((now - ts) <= self.max_age_seconds for ts in timestamps)
+
 # Global singleton thread-safe price cache instance
 price_cache = PriceCache()
