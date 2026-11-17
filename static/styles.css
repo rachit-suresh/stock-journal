@@ -1023,9 +1023,11 @@ html, body {
   inset: 0;
   z-index: 300;
   display: none;
-  align-items: center;
-  justify-content: center;
   padding: 24px;
+  /* The Clerk widget is taller than a short phone viewport, so the gate has to
+     scroll; the card's `margin: auto` keeps it centred when it does fit. */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background:
     radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.18), transparent 60%),
     var(--bg-main);
@@ -1046,6 +1048,9 @@ body.auth-locked .app-container {
 .auth-card {
   width: 100%;
   max-width: 400px;
+  /* Auto margins centre the card inside the scrolling gate without clipping
+     its top edge once the content is taller than the viewport. */
+  margin: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1463,6 +1468,16 @@ body.auth-locked .app-container {
    RESPONSIVE — SMALL PHONES
    ========================================================================== */
 @media (max-width: 520px) {
+  /* Clerk's form has a fixed minimum width; trimming the surrounding padding
+     is what keeps it from being clipped on a phone. */
+  .auth-gate {
+    padding: 12px;
+  }
+
+  .auth-card {
+    padding: 20px 10px;
+  }
+
   .metrics-grid {
     grid-template-columns: 1fr;
     gap: 12px;

@@ -265,6 +265,7 @@ Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the cur
 12. **The Clerk publishable key is baked into `index.html`** — fine (it is public), but rotating Clerk instances means a redeploy of the static site, not just an env change.
 13. **The Clerk instance must be a Development instance, or a production instance on an owned domain** — a production key points at `clerk.<domain>`, and `clerk.<project>.vercel.app` cannot serve Clerk because Vercel's `*.vercel.app` certificate covers one label only (TLS handshake refused → no `clerk.browser.js`, no JWKS → every `/api` call `401`). See `design_decisions_and_tradeoffs.md` §11.
 14. **The clerk-js major must be pinned in `auth.js` (`CLERK_JS_MAJOR`)** — the CDN path `…/npm/@clerk/clerk-js@<major>/dist/clerk.browser.js` is instance-managed, and an old major mounts a widget that then refuses to sign in ("outdated version of Clerk"). The `@latest` alias is a trap: it still resolves to the legacy 4.x bundle.
+15. **Clerk v6 needs two bundles, not one** — `…/npm/@clerk/ui@1/dist/ui.browser.js` must load before `clerk.browser.js`, and `Clerk.load()` must receive `{ ui: { ClerkUI: window.__internal_ClerkUICtor } }`. Loading clerk-js alone looks successful (the script and its chunks 200) but leaves `#clerk-sign-in` empty and makes every `mount*()` throw "Clerk was not loaded with Ui components".
 
 ---
 

@@ -12,6 +12,11 @@ const devMode = !publishableKey;
 // mounts a widget that then refuses to sign in ("outdated version of Clerk").
 const CLERK_JS_MAJOR = '@6';
 
+// Since v5 the widgets ship as a separate bundle. Loading clerk-js alone leaves
+// the mount node empty and every mount*() call throws
+// "Clerk was not loaded with Ui components".
+const CLERK_UI_MAJOR = '@1';
+
 let clerkScriptPromise = null;
 
 function gateElement() {
@@ -35,19 +40,44 @@ function frontendApiFromKey(key) {
   }
 }
 
-function loadClerkScript(frontendApi) {
-  if (clerkScriptPromise) return clerkScriptPromise;
-
-  clerkScriptPromise = new Promise((resolve, reject) => {
+function injectScript(src, attributes = {}) {
+  return new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.async = true;
     script.crossOrigin = 'anonymous';
-    script.dataset.clerkPublishableKey = publishableKey;
-    script.src = `https://${frontendApi}/npm/@clerk/clerk-js${CLERK_JS_MAJOR}/dist/clerk.browser.js`;
-    script.onload = resolve;
-    script.onerror = () => reject(new Error('Could not load Clerk'));
+    script.src = src;
+    for (const [name, value] of Object.entries(attributes)) {
+      script.setAttribute(name, value);
+    }
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Could not load ${src}`));
     document.head.appendChild(script);
   });
+}
+
+/**
+ * Loads both Clerk bundles from the instance's CDN, in the documented order:
+ * the UI bundle first (it defines the component constructor), then clerk-js
+ * (which defines window.Clerk). Both are served by the Frontend API host.
+ */
+function loadClerkScript(frontendApi) {
+  if (clerkScriptPromise) return clerkScriptPromise;
+
+  clerkScriptPromise = (async () => {
+    if (!window.__internal_ClerkUICtor) {
+      const uiSrc = `https://${frontendApi}/npm/@clerk/ui${CLERK_UI_MAJOR}/dist/ui.browser.js`;
+      await injectScript(uiSrc);
+      if (!window.__internal_ClerkUICtor) {
+        throw new Error(`${uiSrc} did not register window.__internal_ClerkUICtor`);
+      }
+    }
+
+    const jsSrc = `https://${frontendApi}/npm/@clerk/clerk-js${CLERK_JS_MAJOR}/dist/clerk.browser.js`;
+    await injectScript(jsSrc, { 'data-clerk-publishable-key': publishableKey });
+    if (!window.Clerk) {
+      throw new Error(`${jsSrc} did not expose window.Clerk`);
+    }
+  })();
 
   return clerkScriptPromise;
 }
@@ -57,6 +87,27 @@ function revealApp() {
   gateElement()?.classList.add('hidden');
 }
 
+function lockToGate(message) {
+  document.body.classList.add('auth-locked');
+  gateElement()?.classList.remove('hidden');
+  if (message !== undefined) setNote(message);
+}
+
+let signInMounted = false;
+
+function mountSignInOnce() {
+  const mountPoint = document.getElementById('clerk-sign-in');
+  if (!mountPoint || signInMounted) return;
+  window.Clerk.mountSignIn(mountPoint, {
+    appearance: { variables: { colorPrimary: '#8b5cf6', borderRadius: '10px' } },
+  });
+  signInMounted = true;
+}
+
+// Set when the API answers 401: the app returns to the gate and apiFetch stops
+// calling a server that is rejecting the token.
+let sessionRejected = false;
+
 async function initAuth() {
   if (devMode) {
     revealApp();
@@ -64,8 +115,7 @@ async function initAuth() {
     return;
   }
 
-  document.body.classList.add('auth-locked');
-  gateElement()?.classList.remove('hidden');
+  lockToGate('');
 
   const frontendApi = frontendApiFromKey(publishableKey);
   if (!frontendApi) {
@@ -74,39 +124,54 @@ async function initAuth() {
   }
 
   await loadClerkScript(frontendApi);
-  await window.Clerk.load();
+  // v6 requires the component constructor to be handed over explicitly,
+  // otherwise the widget host stays empty.
+  await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
+
+  // One listener for the page lifetime: it reveals the app on the first
+  // session and again after a rejected session sent the user back to the gate.
+  let settle;
+  const ready = new Promise((resolve) => { settle = resolve; });
+
+  window.Clerk.addListener(({ session }) => {
+    if (!session) return;
+    const comingBack = sessionRejected;
+    sessionRejected = false;
+    setNote('');
+    if (comingBack) {
+      // The journal was already rendered from the offline fallback, so a
+      // single reload is the cheapest way to boot again with server data.
+      location.reload();
+      return;
+    }
+    revealApp();
+    settle();
+  });
 
   if (window.Clerk.session) {
     revealApp();
-    return;
+    settle();
+  } else {
+    mountSignInOnce();
   }
 
-  const mountPoint = document.getElementById('clerk-sign-in');
-  if (mountPoint) {
-    window.Clerk.mountSignIn(mountPoint, {
-      appearance: { variables: { colorPrimary: '#8b5cf6', borderRadius: '10px' } },
-    });
-  }
-
-  // Reload once a session appears so the app boots with a token in hand
-  // instead of mixing pre-login localStorage with server data.
-  await new Promise((resolve) => {
-    window.Clerk.addListener(({ session }) => {
-      if (session) {
-        resolve();
-        location.reload();
-      }
-    });
-  });
+  await ready;
 }
 
 export const authReady = initAuth().catch((error) => {
   console.error('Authentication could not start:', error);
-  setNote('Sign-in is unavailable right now. Refresh to try again.');
+  // Surface the real cause instead of a generic note: the usual suspects are a
+  // blocked Clerk script, a rejected origin, or a mismatched instance.
+  lockToGate(`Sign-in is unavailable: ${error?.message || error}`);
 });
 
 export function authMode() {
   return devMode ? 'dev' : 'clerk';
+}
+
+/** True once the server rejected a token: stop sending requests until sign-in. */
+export function authSuspended() {
+  return sessionRejected;
 }
 
 export async function getAuthToken() {
@@ -135,7 +200,23 @@ export async function handleUnauthorized() {
     console.warn('API rejected the request although auth is disabled (dev mode).');
     return;
   }
-  await signOut();
+  if (sessionRejected) return;
+  sessionRejected = true;
+
+  const host = frontendApiFromKey(publishableKey);
+  console.warn('The API rejected the bearer token; returning to the sign-in gate.');
+  // Sign out without reloading: the reload used to bounce the user between the
+  // gate and the dashboard whenever the backend rejected every token.
+  try {
+    await window.Clerk?.signOut();
+  } catch (error) {
+    console.warn('Clerk sign-out failed:', error);
+  }
+  clearLocalJournalKeys();
+  lockToGate(
+    `The server rejected your session (401). Sign in again — if this repeats, ` +
+    `CLERK_ISSUER on the backend must be https://${host}.`
+  );
 }
 
 export async function signOut() {

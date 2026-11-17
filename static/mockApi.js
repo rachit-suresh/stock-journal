@@ -1,4 +1,5 @@
-import { apiFetch } from './api.js';
+import { apiFetch } from './api.js?v=2.11';
+import { authSuspended } from './auth.js?v=2.11';
 
 export const SYMBOL_TO_TOKEN = {
   AAPL: 'NSE_EQ|INE062A01020',  // mapped to SBIN
@@ -67,6 +68,10 @@ class MockMarketFeed {
 
     const pollPrices = async () => {
       try {
+        // Signed out after a 401: the gate owns the screen, keep the timer idle
+        // instead of logging a rejected request every 2.5 s.
+        if (authSuspended()) return;
+
         const tokensToPoll = Array.from(new Set([
           ...Object.values(SYMBOL_TO_TOKEN),
           ...this.extraKeys
