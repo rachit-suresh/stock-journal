@@ -7,6 +7,11 @@
 const publishableKey = window.CLERK_PUBLISHABLE_KEY || '';
 const devMode = !publishableKey;
 
+// Pin the clerk-js major to the one current instances accept. The CDN's
+// `@latest` alias still resolves to the legacy 4.x bundle, and an older major
+// mounts a widget that then refuses to sign in ("outdated version of Clerk").
+const CLERK_JS_MAJOR = '@6';
+
 let clerkScriptPromise = null;
 
 function gateElement() {
@@ -38,7 +43,7 @@ function loadClerkScript(frontendApi) {
     script.async = true;
     script.crossOrigin = 'anonymous';
     script.dataset.clerkPublishableKey = publishableKey;
-    script.src = `https://${frontendApi}/npm/@clerk/clerk-js@5/dist/clerk.browser.js`;
+    script.src = `https://${frontendApi}/npm/@clerk/clerk-js${CLERK_JS_MAJOR}/dist/clerk.browser.js`;
     script.onload = resolve;
     script.onerror = () => reject(new Error('Could not load Clerk'));
     document.head.appendChild(script);
