@@ -1,7 +1,6 @@
 fastapi
 uvicorn
-smartapi-python
-pyotp
+upstox-python-sdk
 python-dotenv
 websocket-client
 motor

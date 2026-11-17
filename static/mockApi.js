@@ -1,10 +1,10 @@
 const SYMBOL_TO_TOKEN = {
-  AAPL: '3045',  // mapped to SBIN
-  MSFT: '2885',  // mapped to PNB
-  TSLA: '11536', // mapped to TCS
-  NVDA: '1594',  // mapped to INFY
-  AMZN: '3456',  // mapped to WIPRO
-  BTC: '3045'    // custom scaled from SBIN
+  AAPL: 'NSE_EQ|INE062A01020',  // mapped to SBIN
+  MSFT: 'NSE_EQ|INE160A01022',  // mapped to PNB
+  TSLA: 'NSE_EQ|INE467I01027',  // mapped to TCS
+  NVDA: 'NSE_EQ|INE009A01021',  // mapped to INFY
+  AMZN: 'NSE_EQ|INE075A01022',  // mapped to WIPRO
+  BTC: 'NSE_EQ|INE062A01020'    // custom scaled from SBIN
 };
 
 class MockMarketFeed {
@@ -54,7 +54,7 @@ class MockMarketFeed {
     const pollPrices = async () => {
       try {
         const baseUrl = window.FASTAPI_BACKEND_URL || window.API_BASE_URL || '';
-        const response = await fetch(`${baseUrl}/api/prices?tokens=${tokensToPoll}`);
+        const response = await fetch(`${baseUrl}/api/prices?tokens=${encodeURIComponent(tokensToPoll)}`);
         const json = await response.json();
         
         if (json && json.data) {

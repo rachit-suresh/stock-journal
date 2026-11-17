@@ -10,11 +10,11 @@ class MockMarketStreamer(IMarketDataStreamer):
     def __init__(self):
         self.running = False
         self.prices = {
-            "3045": 650.00,   # SBIN
-            "2885": 80.00,    # PNB
-            "11536": 3500.00, # TCS
-            "1594": 1500.00,  # INFY
-            "3456": 450.00,   # WIPRO
+            "NSE_EQ|INE062A01020": 650.00,   # SBIN
+            "NSE_EQ|INE160A01022": 80.00,    # PNB
+            "NSE_EQ|INE467I01027": 3500.00,  # TCS
+            "NSE_EQ|INE009A01021": 1500.00,  # INFY
+            "NSE_EQ|INE075A01022": 450.00,   # WIPRO
         }
 
     def authenticate(self) -> bool:
