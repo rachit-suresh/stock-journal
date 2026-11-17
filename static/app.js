@@ -1,5 +1,6 @@
-import { stateManager } from './state.js?v=2.3';
-import { marketFeed } from './mockApi.js?v=2.3';
+import { stateManager } from './state.js?v=2.5';
+import { marketFeed, SYMBOL_TO_TOKEN } from './mockApi.js?v=2.5';
+import { apiFetch } from './api.js';
 
 // ==========================================================================
 // SECURITY & SANITIZATION HELPERS
@@ -84,6 +85,8 @@ const metricWinLossCount = document.getElementById('metric-win-loss-count');
 // Container Elements
 const positionsContainer = document.getElementById('positions-container');
 const watchlistContainer = document.getElementById('watchlist-container');
+const watchlistForm = document.getElementById('watchlist-form');
+const watchlistInput = document.getElementById('watchlist-input');
 
 // Toast Container
 const toastContainer = document.getElementById('toast-container');
@@ -269,21 +272,24 @@ const formatCurrency = (val) => {
 };
 
 // Render Watchlist Panel
+const DEMO_WATCHLIST = [
+  { symbol: 'AAPL', name: 'Apple Inc.' },
+  { symbol: 'MSFT', name: 'Microsoft Corp.' },
+  { symbol: 'NVDA', name: 'NVIDIA Corp.' },
+  { symbol: 'TSLA', name: 'Tesla Inc.' },
+  { symbol: 'AMZN', name: 'Amazon.com Inc.' },
+  { symbol: 'BTC', name: 'Bitcoin (USD)' }
+];
+
+// Instrument keys saved on the server for this account (GAP-9).
+let userWatchlist = [];
+
 function renderWatchlist() {
   watchlistContainer.innerHTML = '';
-  
-  const watchlistTickers = [
-    { symbol: 'AAPL', name: 'Apple Inc.' },
-    { symbol: 'MSFT', name: 'Microsoft Corp.' },
-    { symbol: 'NVDA', name: 'NVIDIA Corp.' },
-    { symbol: 'TSLA', name: 'Tesla Inc.' },
-    { symbol: 'AMZN', name: 'Amazon.com Inc.' },
-    { symbol: 'BTC', name: 'Bitcoin (USD)' }
-  ];
 
-  watchlistTickers.forEach(ticker => {
+  DEMO_WATCHLIST.forEach(ticker => {
     const price = currentPrices[ticker.symbol] || 0;
-    
+
     const item = document.createElement('div');
     item.className = 'watchlist-item';
     item.id = `watchlist-${ticker.symbol}`;
@@ -297,6 +303,103 @@ function renderWatchlist() {
       </div>
     `;
     watchlistContainer.appendChild(item);
+  });
+
+  // The demo symbols above already cover these keys, so only show the extras.
+  const demoTokens = new Set(Object.values(SYMBOL_TO_TOKEN));
+  const customKeys = userWatchlist.filter(key => !demoTokens.has(key));
+
+  customKeys.forEach(key => {
+    const price = marketFeed.getKeyPrice(key);
+    const item = document.createElement('div');
+    item.className = 'watchlist-item watchlist-item-custom';
+    item.dataset.key = key;
+    item.innerHTML = `
+      <div class="ticker-name-box">
+        <span class="ticker-symbol ticker-key">${escapeHtml(key)}</span>
+        <span class="ticker-company">Custom instrument</span>
+      </div>
+      <div class="ticker-pricing">
+        <div class="ticker-price">${price === undefined ? '—' : formatCurrency(price)}</div>
+        <button class="watchlist-remove" type="button" data-key="${escapeHtml(key)}"
+                aria-label="Remove ${escapeHtml(key)} from the watchlist">&times;</button>
+      </div>
+    `;
+    watchlistContainer.appendChild(item);
+  });
+
+  if (customKeys.length === 0) {
+    const hint = document.createElement('p');
+    hint.className = 'watchlist-empty';
+    hint.textContent = 'Add an Upstox instrument key to stream extra symbols.';
+    watchlistContainer.appendChild(hint);
+  }
+
+  watchlistContainer.querySelectorAll('.watchlist-remove').forEach(button => {
+    button.addEventListener('click', () => removeWatchlistKey(button.dataset.key));
+  });
+}
+
+async function loadWatchlist() {
+  try {
+    const response = await apiFetch('/api/watchlist');
+    const json = await response.json();
+    userWatchlist = Array.isArray(json.data) ? json.data : [];
+    marketFeed.setExtraKeys(userWatchlist);
+    renderWatchlist();
+  } catch (error) {
+    console.warn('Could not load the watchlist:', error);
+  }
+}
+
+async function saveWatchlist(keys) {
+  try {
+    const response = await apiFetch('/api/watchlist', {
+      method: 'PUT',
+      body: JSON.stringify({ keys })
+    });
+    const json = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const detail = typeof json.detail === 'string' ? json.detail : 'Check the instrument key format.';
+      showToast(detail, 'danger');
+      return false;
+    }
+
+    userWatchlist = Array.isArray(json.data) ? json.data : keys;
+    marketFeed.setExtraKeys(userWatchlist);
+    renderWatchlist();
+    return true;
+  } catch (error) {
+    console.error('Could not save the watchlist:', error);
+    showToast('Could not save the watchlist.', 'danger');
+    return false;
+  }
+}
+
+async function addWatchlistKey(rawKey) {
+  const key = String(rawKey || '').trim().toUpperCase();
+  if (!key) return false;
+  if (userWatchlist.includes(key)) {
+    showToast('That instrument is already in your watchlist.', 'danger');
+    return false;
+  }
+  return saveWatchlist([...userWatchlist, key]);
+}
+
+function removeWatchlistKey(key) {
+  saveWatchlist(userWatchlist.filter(existing => existing !== key));
+}
+
+// Custom watchlist rows are keyed by instrument, not by demo symbol, so they
+// refresh from the polled key map instead of the tick listener's symbol lookup.
+function updateCustomWatchPrices() {
+  watchlistContainer.querySelectorAll('.watchlist-item-custom').forEach(row => {
+    const key = row.dataset.key;
+    const cell = row.querySelector('.ticker-price');
+    if (!key || !cell) return;
+    const price = marketFeed.getKeyPrice(key);
+    cell.textContent = price === undefined ? '—' : formatCurrency(price);
   });
 }
 
@@ -855,6 +958,10 @@ function startMarketTickerSubscription() {
       }
     });
 
+    if (currentView === 'dashboard') {
+      updateCustomWatchPrices();
+    }
+
     const metrics = stateManager.getMetrics(currentPrices);
     
     if (currentView === 'dashboard') {
@@ -1118,13 +1225,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Watchlist (GAP-9): per-account instrument keys streamed from the backend
+  if (watchlistForm) {
+    watchlistForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const saved = await addWatchlistKey(watchlistInput.value);
+      if (saved) watchlistInput.value = '';
+    });
+  }
+
   // Initial render
   renderWatchlist();
   updateAllViews();
-  
+
   stateManager.onLoad(() => {
     updateAllViews();
+    loadWatchlist();
   });
+
+  // Pull this account's saved instrument keys once the session is ready
+  loadWatchlist();
   
   // Start simulation background tick listener
   startMarketTickerSubscription();

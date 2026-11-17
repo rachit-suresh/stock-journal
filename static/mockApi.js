@@ -1,4 +1,6 @@
-const SYMBOL_TO_TOKEN = {
+import { apiFetch } from './api.js';
+
+export const SYMBOL_TO_TOKEN = {
   AAPL: 'NSE_EQ|INE062A01020',  // mapped to SBIN
   MSFT: 'NSE_EQ|INE160A01022',  // mapped to PNB
   TSLA: 'NSE_EQ|INE467I01027',  // mapped to TCS
@@ -19,12 +21,26 @@ class MockMarketFeed {
     };
     this.listeners = [];
     this.intervalId = null;
+    // Instrument keys added through the user's watchlist (GAP-9). The backend
+    // subscribes them for streaming; the ticker polls the same set.
+    this.extraKeys = [];
+    this.keyPrices = {};
     this.startSimulation();
   }
 
   // Retrieve current prices
   getCurrentPrices() {
     return { ...this.prices };
+  }
+
+  // Latest LTP for a raw Upstox instrument key
+  getKeyPrice(key) {
+    return this.keyPrices[key];
+  }
+
+  // Replace the watchlist-derived instrument keys polled alongside the demo map
+  setExtraKeys(keys) {
+    this.extraKeys = Array.isArray(keys) ? [...new Set(keys)] : [];
   }
 
   // Subscribe to price changes
@@ -49,16 +65,19 @@ class MockMarketFeed {
   startSimulation() {
     if (this.intervalId) return;
 
-    const tokensToPoll = Array.from(new Set(Object.values(SYMBOL_TO_TOKEN))).join(',');
-
     const pollPrices = async () => {
       try {
-        const baseUrl = window.FASTAPI_BACKEND_URL || window.API_BASE_URL || '';
-        const response = await fetch(`${baseUrl}/api/prices?tokens=${encodeURIComponent(tokensToPoll)}`);
+        const tokensToPoll = Array.from(new Set([
+          ...Object.values(SYMBOL_TO_TOKEN),
+          ...this.extraKeys
+        ])).join(',');
+
+        const response = await apiFetch(`/api/prices?tokens=${encodeURIComponent(tokensToPoll)}`);
         const json = await response.json();
         
         if (json && json.data) {
           const liveData = json.data;
+          this.keyPrices = { ...liveData };
           const updatedList = [];
 
           Object.keys(SYMBOL_TO_TOKEN).forEach(symbol => {
