@@ -36,7 +36,11 @@ class Settings:
     MAX_TRADES_PER_USER: int = int(os.getenv("MAX_TRADES_PER_USER", "2000"))
     MAX_STRATEGIES_PER_USER: int = int(os.getenv("MAX_STRATEGIES_PER_USER", "50"))
     MAX_EMOTIONS_PER_USER: int = int(os.getenv("MAX_EMOTIONS_PER_USER", "50"))
-    MAX_WATCHLIST_KEYS: int = int(os.getenv("WATCHLIST_MAX_KEYS", "25"))
+    # Read the documented name first; WATCHLIST_MAX_KEYS is accepted as the
+    # legacy spelling so an older deployment's env keeps working.
+    MAX_WATCHLIST_KEYS: int = int(
+        os.getenv("MAX_WATCHLIST_KEYS", os.getenv("WATCHLIST_MAX_KEYS", "25"))
+    )
     # A watchlist stops pinning stream slots once its owner has been idle this long.
     WATCHLIST_TTL_SECONDS: float = float(os.getenv("WATCHLIST_TTL_SECONDS", "3600"))
 
