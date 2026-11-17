@@ -8,15 +8,14 @@
     // Configurable FastAPI backend URL for decoupled Vercel deployment
     window.FASTAPI_BACKEND_URL = window.FASTAPI_BACKEND_URL || "https://stock-journal-xenm.onrender.com";
 
-    // Clerk publishable key (public by design). Use the pk_test_… key of the
-    // Clerk DEVELOPMENT instance: a production instance's frontend API lives on
-    // clerk.<domain>, which cannot be served from *.vercel.app (see
-    // docs/design_decisions_and_tradeoffs.md §11). Blank it to run the UI in
-    // dev mode against a backend started with AUTH_DISABLED=true.
-    window.CLERK_PUBLISHABLE_KEY = window.CLERK_PUBLISHABLE_KEY || "";
+    // Clerk publishable key (public by design). Development instance:
+    // frontend API and issued-by host = concrete-dassie-7282.clerk.accounts.dev,
+    // which is the CLERK_ISSUER the backend verifies against. Blank it to run
+    // the UI in dev mode against a backend started with AUTH_DISABLED=true.
+    window.CLERK_PUBLISHABLE_KEY = window.CLERK_PUBLISHABLE_KEY || "pk_test_Y29uY3JldGUtZGFzc2llLTcyODIuY2xlcmsuYWNjb3VudHMuZGV2JA";
   </script>
   <!-- Google Fonts & Stylesheets -->
-  <link rel="stylesheet" href="styles.css?v=2.6">
+  <link rel="stylesheet" href="styles.css?v=2.7">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -618,6 +617,6 @@
   </div>
 
   <!-- Main Application Orchestrator Script -->
-  <script type="module" src="app.js?v=2.6"></script>
+  <script type="module" src="app.js?v=2.7"></script>
 </body>
 </html>
