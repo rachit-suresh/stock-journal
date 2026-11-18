@@ -278,15 +278,24 @@ In `app/streaming/price_cache.py`, the `PriceCache` uses a standard **`threading
 
 ---
 
-### 7.3 Asynchronous Non-Blocking I/O: Motor Driver vs. Sync PyMongo
+### 7.3 Asynchronous Non-Blocking I/O: `asyncpg` Pool vs. Sync `psycopg` / an ORM
 
 #### **Context & Decision**
-In `app/core/database.py` and `app/repositories/mongo/`, we utilized **Motor (`AsyncIOMotorClient`)** rather than standard `pymongo`.
+In `app/core/database.py` and `app/repositories/postgres/`, persistence goes through a single **asyncpg** connection pool rather than a synchronous driver (`psycopg`) or an ORM (SQLAlchemy / SQLModel).
 
-#### **Technical Rationale & Performance Impact**
-FastAPI operates on an asynchronous event loop powered by `uvicorn` and `anyio`.
-- When a synchronous `pymongo` call is executed inside an `async def` route function, python blocks the single event loop thread while waiting for database socket I/O. During this wait, **all other concurrent client HTTP requests are queued**.
-- Motor wraps PyMongo using `asyncio`, yielding control back to the event loop during MongoDB network wait times. This allows the server to process hundreds of concurrent HTTP requests without increasing thread counts.
+#### **Alternatives Evaluated**
+1. **Option A: synchronous `psycopg` calls**
+2. **Option B: SQLAlchemy ORM (typed columns, sessions, migrations)**
+3. **Option C: `asyncpg` pool + hand-written SQL** — *Selected*
+
+#### **Technical Rationale & Trade-offs**
+- **Why NOT `psycopg`?**
+  FastAPI runs on one asyncio loop. A blocking driver pauses that loop for the whole round trip — 5–40 ms against a Supabase pooler — so one slow query queues every other request. Running it in a thread pool would reintroduce the thread-per-request model FastAPI avoids.
+- **Why NOT an ORM?**
+  The trade payload is deliberately a widening `jsonb` document while GAP-2 is open, and the four tables hold four small queries; an ORM would add a session lifecycle and a migration chain for no query composition benefit. The repository interfaces already provide the seam an ORM would offer.
+- **Why `asyncpg`?**
+  It speaks the Postgres wire protocol directly, yields the loop while waiting, and returns records as mappings that go straight into the `jsonb` codec. Concurrency comes from the pool (`min_size=1`, `max_size=5`, `command_timeout=30`), not from threads.
+- **Cost accepted:** `statement_cache_size=0`, because Supabase's Supavisor pooler cannot hold per-connection prepared statements; every statement is parameterised text (`$1`, `$2`) and asyncpg caches it client-side.
 
 ---
 

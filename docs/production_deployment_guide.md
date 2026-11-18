@@ -23,17 +23,25 @@ The application is engineered to handle this scenario out-of-the-box:
 
 #### Backend (Render Web Service Environment Variables)
 ```env
-# Database Settings (MongoDB Atlas Cloud Cluster)
-MONGO_URI=mongodb+srv://<username>:<password>@cluster0.xxx.mongodb.net/stock_journal?retryWrites=true&w=majority
-MONGO_DB_NAME=stock_journal
+# Database: Supabase Postgres. Use the **Session pooler** connection string
+# (Dashboard -> Connect): the direct `db.<ref>.supabase.co` host is IPv6-only
+# and Render has no IPv6 egress. Copy it verbatim - it already carries the
+# password, so treat it as a secret.
+DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
 
 # CORS Security (Restrict API calls to Vercel and Localhost)
 ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:8000
 
-# Identity (Clerk) — the issuer URL shown in Clerk → API keys / JWT verification
+# Identity (Supabase Auth). The project URL is also the JWT issuer prefix:
+# tokens carry `iss = <SUPABASE_URL>/auth/v1`.
 ENV=production
-CLERK_ISSUER=https://<instance>.clerk.accounts.dev
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_ANON_KEY=<anon public key>
 AUTH_DISABLED=false
+
+# Only for a project whose JWT signing key is still the legacy shared secret;
+# leave it unset when the project uses asymmetric (ES256/RS256) keys.
+# SUPABASE_JWT_SECRET=<jwt secret>
 
 # Upstox Credentials (Optional: Leave blank to auto-run in MOCK mode)
 UPSTOX_ACCESS_TOKEN=your_upstox_analytics_access_token
@@ -56,28 +64,34 @@ STREAMER_SYNC_SECONDS=15
 
 #### Frontend (Vercel)
 
-**No environment variables are required.** Vercel only serves `static/` as-is — there is no build step, so Vercel env vars are never injected into the HTML and setting `FASTAPI_BACKEND_URL` there has no effect. Both frontend values live in `static/index.html`:
+**No environment variables are required, and no key is stored in the HTML.** Vercel only serves `static/` as-is — there is no build step, so Vercel env vars are never injected into the pages. Instead, `static/auth.js` calls `GET /auth/config` on the backend (via the `/api/*` rewrite, so it is the Render deployment) and receives
 
-| Constant in `static/index.html` | Purpose | Example |
+```json
+{ "provider": "supabase", "url": "https://<ref>.supabase.co", "anonKey": "<anon public key>" }
+```
+
+Both values are public by design: the anon key only identifies the project, and Row Level Security leaves it no access to the tables. This is what keeps the switch a pure environment-variable change: Render's env decides which Supabase project the browser talks to.
+
+| Constant in `static/index.html` | Purpose | Default |
 | --- | --- | --- |
-| `window.FASTAPI_BACKEND_URL` (line ~9) | Origin of the FastAPI service that `apiFetch` calls | `https://stock-journal-xenm.onrender.com` |
-| `window.CLERK_PUBLISHABLE_KEY` (line ~13) | Clerk instance (public by design) | `pk_test_…` |
+| `window.FASTAPI_BACKEND_URL` | Origin of the FastAPI service `apiFetch` calls | same origin on `localhost`/`127.0.0.1`; `https://stock-journal-xenm.onrender.com` elsewhere |
 
-The Render host also appears in `vercel.json` as the `/api/:path*` rewrite destination; keep the two in sync if you rename the service. Leaving `CLERK_PUBLISHABLE_KEY` empty keeps the UI in dev mode (the sidebar then reads "Dev mode"), which fails against a production API that requires a token.
+Serving from the same origin is correct in both deployments (Render serves the page itself, and `vercel.json` rewrites `/api/*` to Render). The absolute default only matters when the page is opened from a plain static file server.
 
-### Clerk Setup (one-time, ~5 minutes)
-1. Create an application at [dashboard.clerk.com](https://dashboard.clerk.com) (name it e.g. `stock-journal`).
-2. **Stay on the Development instance.** Do not promote a Production instance unless you own a real domain — see the warning below.
-3. **User & Authentication → Email, phone, username**: enable **Email address** and add **Google** as a social connection.
-4. **Configure → Restrictions**: keep sign-up open (the app is designed for open signup), and leave "Require email verification" on.
-5. **Configure → Paths**: leave the hosted pages enabled, or set `Sign-in URL` / `Sign-up URL` to your Vercel domain if you prefer the hosted flow.
-6. **API keys**:
-   - Copy the **Publishable key** (`pk_test_…`) into `static/index.html` → `window.CLERK_PUBLISHABLE_KEY`.
-   - Copy the **Issuer** (`https://<slug>.clerk.accounts.dev`) into Render as `CLERK_ISSUER`. It is also the `iss` claim in the JWKS, so a mismatch means every token is rejected with `401`.
-   - Ignore the `CLERK_SECRET_KEY` / `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` snippet: this is a static frontend, the secret key is never used (tokens are verified against the public JWKS).
-7. **Configure → Domains / Allowed origins**: add `https://<your-app>.vercel.app` (and `http://localhost:8000` while testing). Clerk refuses to mint sessions for unlisted origins.
+### Supabase Setup (one-time, ~10 minutes)
+1. Create a project at [supabase.com](https://supabase.com) (any region near you; note the `<ref>` in its URL).
+2. **Authentication -> Providers -> Email**: keep *Enable email provider* on. Turn **Confirm email** *off* — the app has no mail flow, and with confirmation on a new account cannot sign in until the link is clicked. (The UI does handle that case: it tells the user to confirm, then sign in.)
+3. **Authentication -> URL Configuration**: set *Site URL* and add *Redirect URLs* for `https://<your-app>.vercel.app` and `http://localhost:8000`. Only needed if you later add OAuth or magic links; password sign-in works without it.
+4. **Project Settings -> API**: copy the *Project URL* into `SUPABASE_URL` and the *anon public* key into `SUPABASE_ANON_KEY` on Render. Do not use the `service_role` key anywhere — it bypasses RLS.
+5. **Project Settings -> API -> JWT Settings**: if the project still signs with HS256, copy the *JWT Secret* into `SUPABASE_JWT_SECRET`. Projects created on the new asymmetric keys publish a JWKS instead, which the backend fetches from `<SUPABASE_URL>/auth/v1/.well-known/jwks.json`; nothing else is needed.
+6. **Database -> Connect**: copy the **Session pooler** URI into `DATABASE_URL` on Render.
+7. Nothing else: the tables and indexes are created by the app on boot, with RLS enabled on all four (`app/core/schema.py`, idempotent).
 
-> **A Clerk Production instance cannot run on `*.vercel.app`.** Its Frontend API lives on `clerk.<primary-domain>`, and Vercel's wildcard certificate `*.vercel.app` covers only one label, so `clerk.<project>.vercel.app` fails the TLS handshake (Clerk's dashboard shows the domain as **Pending** forever, and no CNAME can be created in a zone you do not control). With that key, `clerk.browser.js` never loads and the backend's JWKS fetch fails, so every `/api` call answers `401`. Either stay on the Development instance (recommended for a two-person app) or attach a real, owned domain to Vercel before promoting to Production. Recorded in `design_decisions_and_tradeoffs.md` §11.
+> **Why RLS matters here.** Supabase exposes every `public` table over its REST API to anyone holding the anon key, and that key is in the page. The schema enables Row Level Security on all four tables and defines **no policies**, so the anon and authenticated PostgREST roles can read and write nothing. The backend connects as the table owner (the pooler user), which is not subject to RLS. If you ever add a policy, you are opening that door deliberately.
+
+### Migrating away from MongoDB / Clerk
+
+This release removes both: `motor` and `pymongo` are gone from `requirements.txt`, and the `app/repositories/mongo/` package and `app/core/indexes.py` are deleted. There is **no data migration**: the app has never held real user data, and each account re-seeds the demo journal on its first `GET /api/journal`. Delete the old `MONGO_URI`, `MONGO_DB_NAME` and `CLERK_ISSUER` variables from Render after the deploy succeeds; leaving them set is harmless but misleading.
 
 ---
 
@@ -85,15 +99,15 @@ The Render host also appears in `vercel.json` as the `/api/:path*` rewrite desti
 
 Before pushing to production, verify all pre-flight checks:
 
-- [x] **Dependencies Cleaned**: `requirements.txt` contains the production stack (`fastapi`, `uvicorn`, `motor`, `pymongo`, `upstox-python-sdk`, `websocket-client`, `PyJWT[crypto]`, `pytest`, `pytest-asyncio`, `httpx`).
+- [x] **Dependencies Cleaned**: `requirements.txt` contains the production stack (`fastapi`, `uvicorn`, `asyncpg`, `upstox-python-sdk`, `websocket-client`, `PyJWT[crypto]`, `pytest`, `pytest-asyncio`, `httpx`). `motor` and `pymongo` are gone.
 - [x] **Python Package Initialization**: `__init__.py` markers present in all subpackages in `app/` and `tests/`.
-- [x] **Automated Test Suite**: `python -m pytest -q` → **56 passed** (auth, tenancy, caps, watchlist, streaming, repositories, API).
-- [x] **Environment Secrets Ignored**: `.gitignore` configured to exclude `.env`, `.pytest_cache/`, `__pycache__/`, and `.venv/`.
-- [x] **Vercel API Proxy Rewrites**: `vercel.json` configured with `/api/:path*` proxy rule to forward requests server-side to Render.
+- [x] **Automated Test Suite**: `python -m pytest -q` → **78 passed** (auth, tenancy, caps, watchlist, streaming, repositories, API, plus 14 Postgres integration tests against a real server).
+- [x] **Environment Secrets Ignored**: `.gitignore` excludes `.env`, `.pytest_cache/`, `__pycache__/`, `.venv/` and the throwaway `.pgtest/` cluster.
+- [x] **Vercel API Proxy Rewrites**: `vercel.json` rewrites `/api/:path*` **and** `/auth/config` to Render, so the browser never needs a cross-origin call.
 - [x] **CORS Security Enforced**: `CORSMiddleware` in `main.py` uses `ALLOWED_ORIGINS` with `allow_credentials=False`.
-- [x] **Auth Fail-Closed**: `ENV=production` + `AUTH_DISABLED=true` aborts startup; a missing `CLERK_ISSUER` answers `401` instead of opening the API.
-- [x] **Database Active Ping Validation**: MongoDB connection runs `await client.admin.command('ping')` on startup to verify connectivity.
-- [x] **Owner Indexes Created**: `ensure_indexes()` builds the partial unique indexes on startup (failures are logged, not fatal).
+- [x] **Auth Fail-Closed**: `ENV=production` + `AUTH_DISABLED=true` aborts startup; a missing `SUPABASE_URL` answers `401` instead of opening the API.
+- [x] **Database Reachability Probe**: the pool is opened on startup and `GET /health` runs `SELECT 1` per request (`database: ok|unavailable`). A failed connect logs and leaves the process serving `503` on data routes, so `/health` can report the cause.
+- [x] **Schema Bootstrap**: `ensure_schema()` creates the four tables, their indexes and RLS under an advisory lock on boot (idempotent).
 - [x] **Server-Side Input Sanitization**: Pydantic models sanitize ticker symbols, validate trade sides, and HTML-escape user notes and categories.
 - [x] **Streamer Thread Fault Isolation**: Background WebSocket streamer runs inside an isolated daemon thread, preventing event loop blocking.
 
@@ -114,7 +128,7 @@ Before pushing to production, verify all pre-flight checks:
    ```
    *(Note: Render automatically injects `$PORT` behind the scenes).*
 6. **Environment Variables**:
-   Add `MONGO_URI`, `MONGO_DB_NAME`, `ALLOWED_ORIGINS`, `ENV=production`, `CLERK_ISSUER`, `AUTH_DISABLED=false`, and either `MOCK_STREAMER=true` or `UPSTOX_ACCESS_TOKEN`.
+   Add `DATABASE_URL` (Supabase session pooler URI), `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `ALLOWED_ORIGINS`, `ENV=production`, `AUTH_DISABLED=false`, and either `MOCK_STREAMER=true` or `UPSTOX_ACCESS_TOKEN`. Add `SUPABASE_JWT_SECRET` only if the project signs tokens with HS256.
 7. **Health Check Path**: `/health` (public; returns auth mode + streamer state).
 
 ### Render Free Tier Behavior & Keep-Alive Strategy
@@ -134,8 +148,8 @@ Before pushing to production, verify all pre-flight checks:
    - **Root Directory**: `.` (Project Root)
    - **Build Command**: *(Leave Blank / Override: None)*
    - **Output Directory**: `static`
-4. Environment Variables: **none** — the static site reads its backend URL and Clerk key from `static/index.html`, not from Vercel env vars (there is no build step to inject them).
-5. Edit `static/index.html` and set `window.CLERK_PUBLISHABLE_KEY = "pk_test_…";` (the empty default is dev mode), plus `window.FASTAPI_BACKEND_URL` if your Render service is not `stock-journal-xenm.onrender.com`. Commit → Vercel redeploys.
+4. Environment Variables: **none** — the static site reads its backend URL from `static/index.html` and its Supabase URL / anon key from `GET /auth/config`, not from Vercel env vars (there is no build step to inject them).
+5. Only edit `static/index.html` if your Render service is not `stock-journal-xenm.onrender.com` (and update `vercel.json` too). Commit → Vercel redeploys.
 6. Click **Deploy**.
 
 > The static site is served from `static/`, so every UI change ships with a Vercel deploy. Bump the `?v=` query strings in `index.html` when you change CSS/JS to defeat browser caching.
@@ -144,13 +158,17 @@ Before pushing to production, verify all pre-flight checks:
 
 ## 5. Troubleshooting & Common Deployment Pitfalls
 
-### Issue 1: `ServerSelectionTimeoutError` / MongoDB Connection Failure
-- **Symptom**: Render server logs show `ServerSelectionTimeoutError: No servers found yet`.
-- **Cause**: MongoDB Atlas Network Access IP Whitelist is blocking outbound connections from Render.
-- **Fix**:
-  1. Log into [MongoDB Atlas](https://www.mongodb.com/cloud/atlas).
-  2. Navigate to **Network Access** $\rightarrow$ Click **Add IP Address**.
-  3. Enter `0.0.0.0/0` (Allow Access From Anywhere) and confirm.
+### Issue 1: `ConnectionRefusedError` / `getaddrinfo failed` / `password authentication failed`
+- **Symptom**: Render logs show `Failed to connect to Postgres: ...` and every data route answers `503`; `/health` reports `"database": "unavailable"`.
+- **Cause** (in order of likelihood):
+  1. `DATABASE_URL` uses the **direct** host `db.<ref>.supabase.co`. That host resolves to IPv6 only, and Render has no IPv6 egress. Use the **Session pooler** URI from Dashboard → Connect instead.
+  2. The password was not re-copied after a reset, or the `[YOUR-PASSWORD]` placeholder is still in the string.
+  3. The connection string is missing its scheme (`postgresql://`) because the dashboard URL was pasted instead of the connection string.
+- **Verify**: `/health` → `database`; then `psql "$DATABASE_URL" -c 'select 1'` from any machine that can reach Supabase. Note that the pooler also requires the pooler username form `postgres.<ref>` — the plain `postgres` user only exists on the direct host.
+
+### Issue 1b: `prepared statement "__asyncpg_stmt_…" does not exist`
+- **Cause**: server-side prepared statements do not survive a transaction pooler.
+- **Fix**: already handled — the pool is created with `statement_cache_size=0`. Do not remove that argument, and prefer the **session** pooler URI for the same reason.
 
 ### Issue 2: Vercel Rewrites for Backend Proxying
 - **Symptom**: Frontend fetch requests to `/api/...` receive 404 HTML responses on Vercel.
@@ -181,18 +199,18 @@ Before pushing to production, verify all pre-flight checks:
   ```
 
 ### Issue 4: Every API Call Returns `401`
-- **Symptom**: the UI shows the sign-in gate, or `Sign-in is unavailable right now`; `/health` reports `"auth": "clerk"` but requests fail.
+- **Symptom**: the UI shows the sign-in gate, or the note reads `Invalid or expired session token`; `/health` reports `"auth": "supabase"` but requests fail.
 - **Cause** (in order of likelihood):
-  1. `CLERK_ISSUER` missing or not the issuer of the key in `index.html` (two different Clerk instances, or the `…clerk.accounts.dev` host copied from another project).
-  2. The publishable key in `index.html` still empty → the UI runs in dev mode and sends no token.
-  3. The Vercel origin is missing from Clerk's allowed origins, so no session can be minted.
-  4. A stale token: the UI signs out and reloads automatically; if it loops, check the browser console for the Clerk error.
-- **Verify**: `curl https://<render-host>/health` must return `"auth": "clerk"`; then `curl -i https://<render-host>/api/journal` must return `401` with a JSON detail. A `500` with "AUTH_DISABLED is not allowed when ENV=production" means the env var is still `true`.
-- **Local dev**: set `AUTH_DISABLED=true` and leave `CLERK_PUBLISHABLE_KEY` empty to skip Clerk entirely.
+  1. `SUPABASE_URL` missing or pointing at a different project than the one the browser signed into (`iss` mismatch — the claim must equal `<SUPABASE_URL>/auth/v1`).
+  2. `/auth/config` returns `{"provider":"none"}` → the backend runs with `AUTH_DISABLED=true`, so the UI opens in dev mode and sends no token; the API then rejects nothing but the sidebar reads "Dev mode".
+  3. **Confirm email** is still on in Supabase: new accounts exist but never receive a session. Turn it off.
+  4. A legacy HS256 project without `SUPABASE_JWT_SECRET`: the token's `alg` is `HS256`, and the backend refuses to verify it without the secret (it never falls back to JWKS, to avoid algorithm confusion).
+- **Verify**: `curl https://<render-host>/health` must return `"auth": "supabase"` and `"database": "ok"`; then `curl -i https://<render-host>/api/journal` must return `401` with a JSON detail. `GET /auth/config` must return the project URL, not `{"provider":"none"}`. To inspect a token, paste it into [jwt.io](https://jwt.io) and check `iss`, `aud: authenticated`, `exp` and `sub` (a UUID).
+- **Local dev**: set `AUTH_DISABLED=true` to skip Supabase entirely (the gate then opens straight into the app as `dev-local`).
 
 ### Issue 5: Signed In, But The Journal Is Empty After A Refresh
 - **Cause**: you are signed in with a different account than the one that created the data, or `AUTH_DISABLED` was flipped without clearing `localStorage` (dev bypass uses the fixed `dev-local` subject).
-- **Fix**: check `/health` → `auth`, and the sidebar account row (the Clerk email). Sign out and back in — sign-out clears `stock_journal_*` keys by design.
+- **Fix**: check `/health` → `auth`, and the sidebar account row (the Supabase user email). Sign out and back in — sign-out clears `stock_journal_*` keys by design. Accounts are keyed by the JWT `sub`, so signing up twice with the same address does not merge data.
 
 ### Issue 6: Watchlist Instrument Never Shows A Price
 - **Cause**: the streamer had not yet re-synced when you looked (up to `STREAMER_SYNC_SECONDS`), the key format is wrong (`NSE_EQ|INE002A01018`), or the Upstox token lacks that segment.
