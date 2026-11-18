@@ -29,6 +29,8 @@ def test_health_is_public(anon_client):
     # The fixture never opens a pool, so the probe must report it, not crash.
     assert body["database"] == "unavailable"
     assert "streamer" in body
+    # The two inputs that pick the mock streamer are reported explicitly.
+    assert {"mock_requested", "upstox_token"} <= set(body["streamer"])
     assert "prices_fresh" in body
 
 

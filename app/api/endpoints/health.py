@@ -17,12 +17,20 @@ async def health():
     and `prices_fresh` tells you whether any tick landed inside the freshness
     window, which is what actually matters to a user looking at the screen.
     `database` is `unavailable` when the Postgres pool is missing or failing.
+
+    The mode is chosen once at startup, so `mock_requested` and `upstox_token`
+    are reported next to it: when `mode` is `mock` they say which of the two
+    inputs asked for it, instead of leaving a deploy to guesswork.
     """
     return {
         "status": "ok",
         "env": settings.ENV,
         "auth": settings.auth_mode(),
         "database": await database_status(),
-        "streamer": streamer_snapshot(),
+        "streamer": {
+            **streamer_snapshot(),
+            "mock_requested": settings.MOCK_STREAMER,
+            "upstox_token": settings.has_upstox_credentials(),
+        },
         "prices_fresh": price_cache.has_fresh_data(),
     }
