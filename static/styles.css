@@ -1016,7 +1016,7 @@ html, body {
 }
 
 /* ==========================================================================
-   SIGN-IN GATE (shown until a Clerk session exists)
+   SIGN-IN GATE (shown until a Supabase session exists)
    ========================================================================== */
 .auth-gate {
   position: fixed;
@@ -1075,10 +1075,72 @@ body.auth-locked .app-container {
   color: var(--text-muted);
 }
 
-#clerk-sign-in {
+/* Email + password form, swapped between sign-in and sign-up by auth.js. */
+.auth-form {
   width: 100%;
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.auth-field span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.auth-field input {
+  width: 100%;
+  padding: 11px 14px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text-main);
+  background-color: var(--bg-main);
+  border: 1px solid var(--border-color-hover);
+  border-radius: var(--border-radius-md);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.auth-field input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-glow);
+}
+
+.auth-submit {
+  width: 100%;
   justify-content: center;
+  padding: 11px 16px;
+}
+
+.auth-submit:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.auth-link {
+  align-self: center;
+  padding: 2px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-link:hover {
+  color: var(--text-main);
 }
 
 .auth-note {

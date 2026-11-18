@@ -1,5 +1,5 @@
-import { apiFetch } from './api.js?v=2.11';
-import { authSuspended } from './auth.js?v=2.11';
+import { apiFetch } from './api.js?v=2.12';
+import { authSuspended } from './auth.js?v=2.12';
 
 export const SYMBOL_TO_TOKEN = {
   AAPL: 'NSE_EQ|INE062A01020',  // mapped to SBIN

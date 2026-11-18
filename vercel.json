@@ -6,6 +6,10 @@
       "destination": "https://stock-journal-xenm.onrender.com/api/:path*"
     },
     {
+      "source": "/auth/config",
+      "destination": "https://stock-journal-xenm.onrender.com/auth/config"
+    },
+    {
       "source": "/(.*)",
       "destination": "/static/$1"
     }

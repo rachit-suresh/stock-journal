@@ -5,29 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Stock Journal & Portfolio Dashboard</title>
   <script>
-    // Configurable FastAPI backend URL for decoupled Vercel deployment
-    window.FASTAPI_BACKEND_URL = window.FASTAPI_BACKEND_URL || "https://stock-journal-xenm.onrender.com";
-
-    // Clerk publishable key (public by design). Development instance:
-    // frontend API and issued-by host = concrete-dassie-7282.clerk.accounts.dev,
-    // which is the CLERK_ISSUER the backend verifies against. Blank it to run
-    // the UI in dev mode against a backend started with AUTH_DISABLED=true.
-    window.CLERK_PUBLISHABLE_KEY = window.CLERK_PUBLISHABLE_KEY || "pk_test_Y29uY3JldGUtZGFzc2llLTcyODIuY2xlcmsuYWNjb3VudHMuZGV2JA";
+    // Backend URL. Same origin is correct in both deployments: Render serves
+    // this page itself, and vercel.json rewrites /api/* to Render. The
+    // absolute default only matters for a plain static server.
+    // auth.js also reads Supabase's URL and anon key from GET /auth/config,
+    // so no key is stored in this file.
+    const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+    window.FASTAPI_BACKEND_URL = window.FASTAPI_BACKEND_URL ||
+      (LOCAL_HOSTS.includes(window.location.hostname) ? "" : "https://stock-journal-xenm.onrender.com");
   </script>
   <!-- Google Fonts & Stylesheets -->
-  <link rel="stylesheet" href="styles.css?v=2.11">
+  <link rel="stylesheet" href="styles.css?v=2.12">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
-  <!-- SIGN-IN GATE: hidden by auth.js once a Clerk session exists -->
+  <!-- SIGN-IN GATE: hidden by auth.js once a Supabase session exists -->
   <div class="auth-gate" id="auth-gate">
     <div class="auth-card">
       <div class="brand-icon">SJ</div>
       <h1>StockJournal</h1>
       <p class="auth-subtitle">Sign in to open your trading journal.</p>
-      <div id="clerk-sign-in"></div>
+      <!-- Email + password against Supabase Auth (auth.js). -->
+      <form class="auth-form" id="auth-form" hidden novalidate>
+        <label class="auth-field">
+          <span>Email</span>
+          <input id="auth-email" type="email" name="email" autocomplete="username"
+                 inputmode="email" autocapitalize="none" spellcheck="false" required>
+        </label>
+        <label class="auth-field">
+          <span>Password</span>
+          <input id="auth-password" type="password" name="password"
+                 autocomplete="current-password" required>
+        </label>
+        <button class="btn btn-primary auth-submit" id="auth-submit" type="submit">Sign in</button>
+        <button class="auth-link" id="auth-toggle" type="button">New here? Create an account</button>
+      </form>
       <p class="auth-note" id="auth-note">Preparing sign-in…</p>
     </div>
   </div>
@@ -617,6 +631,6 @@
   </div>
 
   <!-- Main Application Orchestrator Script -->
-  <script type="module" src="app.js?v=2.11"></script>
+  <script type="module" src="app.js?v=2.12"></script>
 </body>
 </html>
