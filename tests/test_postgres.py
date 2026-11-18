@@ -16,7 +16,7 @@ from pathlib import Path
 import asyncpg
 import pytest
 
-from app.core.database import create_pool
+from app.core.database import create_pool, ssl_mode_for
 from app.core.schema import ensure_schema
 from app.repositories.postgres.emotion_repository import PostgresEmotionRepository
 from app.repositories.postgres.strategy_repository import PostgresStrategyRepository
@@ -93,6 +93,27 @@ def strategies(pool, owner):
 @pytest.fixture
 def emotions(pool, owner):
     return PostgresEmotionRepository(pool, owner)
+
+
+# --- Connection -------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "dsn, expected",
+    [
+        # A hosted pooler host without sslmode must be upgraded to TLS: asyncpg
+        # reads a bare DSN as `disable` and Supabase refuses plaintext.
+        (
+            "postgresql://postgres.abc:pw@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
+            "require",
+        ),
+        ("postgresql://u:p@db.example.com:5432/postgres?sslmode=disable", None),
+        ("postgresql://u:p@db.example.com:5432/postgres?sslmode=require", None),
+        ("postgresql://postgres:postgres@127.0.0.1:5432/postgres", None),
+        ("postgresql://postgres:postgres@localhost/postgres", None),
+    ],
+)
+def test_ssl_mode_follows_the_dsn(dsn, expected):
+    assert ssl_mode_for(dsn) == expected
 
 
 # --- Schema ---------------------------------------------------------------

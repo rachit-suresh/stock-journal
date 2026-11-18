@@ -3,7 +3,7 @@ uvicorn
 upstox-python-sdk
 python-dotenv
 websocket-client
-asyncpg
+asyncpg>=0.30
 PyJWT[crypto]>=2.8
 pytest
 pytest-asyncio

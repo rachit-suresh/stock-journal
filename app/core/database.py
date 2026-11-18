@@ -3,6 +3,7 @@
 import json
 import logging
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
 import asyncpg
 from fastapi import HTTPException, status
@@ -11,6 +12,9 @@ from app.core.config import settings
 from app.core.schema import ensure_schema
 
 logger = logging.getLogger("database")
+
+# Databases that are reached over loopback or a unix socket in development.
+_LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1", "[::1]"}
 
 
 class DatabaseManager:
@@ -27,7 +31,26 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
     )
 
 
+def ssl_mode_for(dsn: str) -> Optional[str]:
+    """`require` for a hosted database, `None` to leave the decision alone.
+
+    A DSN that already carries `sslmode` (or `ssl`) keeps its own answer, and
+    loopback or socket targets stay plaintext so local dev and pgserver work.
+    """
+    parsed = urlparse(dsn)
+    if {"sslmode", "ssl"} & {key.lower() for key in parse_qs(parsed.query)}:
+        return None
+    host = (parsed.hostname or "").lower()
+    if host in _LOCAL_HOSTS or host.endswith(".local"):
+        return None
+    return "require"
+
+
 async def create_pool(dsn: str) -> asyncpg.Pool:
+    # Hosted Postgres (Supabase included) refuses plaintext, but asyncpg reads a
+    # DSN without `sslmode` as `disable`, so the handshake died before the
+    # password was even checked. Ask for TLS unless the DSN says otherwise.
+    ssl_mode = ssl_mode_for(dsn)
     # statement_cache_size=0: Supabase's pooler (Supavisor) cannot keep
     # server-side prepared statements across pooled connections.
     return await asyncpg.create_pool(
@@ -37,6 +60,7 @@ async def create_pool(dsn: str) -> asyncpg.Pool:
         statement_cache_size=0,
         command_timeout=30,
         init=_init_connection,
+        **{"ssl": ssl_mode} if ssl_mode else {},
     )
 
 
