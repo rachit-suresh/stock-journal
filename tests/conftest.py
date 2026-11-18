@@ -57,9 +57,10 @@ def api():
 
 @pytest.fixture
 def anon_client(monkeypatch):
-    """Client with authentication enforced and no Clerk network calls."""
+    """Client with authentication enforced and no Supabase network calls."""
     app.dependency_overrides.clear()
     monkeypatch.setattr(settings, "AUTH_DISABLED", False)
-    monkeypatch.setattr(settings, "CLERK_ISSUER", "https://example.clerk.accounts.dev")
+    monkeypatch.setattr(settings, "SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setattr(settings, "SUPABASE_ANON_KEY", "anon-test-key")
     yield TestClient(app)
     app.dependency_overrides.clear()

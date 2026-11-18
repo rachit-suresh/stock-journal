@@ -7,3 +7,5 @@ venv/
 *.log
 .DS_Store
 journal_db.json
+# Throwaway Postgres data dir used by tests/test_postgres.py (pgserver)
+.pgtest/
