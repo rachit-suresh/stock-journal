@@ -3,8 +3,9 @@
 // itself twice and Supabase would create two clients. Cache busting lives on
 // the two entry points in index.html instead.
 import { stateManager } from './state.js';
-import { marketFeed, SYMBOL_TO_TOKEN } from './mockApi.js';
+import { marketFeed } from './marketFeed.js';
 import { apiFetch } from './api.js';
+import { mountTour } from './onboarding.js';
 
 // ==========================================================================
 // SECURITY & SANITIZATION HELPERS
@@ -76,12 +77,13 @@ const tradesTableBody = document.getElementById('trades-table-body');
 const btnExport = document.getElementById('btn-export');
 const btnImport = document.getElementById('btn-import');
 const fileImportInput = document.getElementById('file-import-input');
-const btnResetMock = document.getElementById('btn-reset-mock');
+const btnHelp = document.getElementById('btn-help');
 
 // Metric Elements
 const metricEquity = document.getElementById('metric-equity');
 const metricRealizedPnL = document.getElementById('metric-realized-pnl');
 const metricUnrealizedPnL = document.getElementById('metric-unrealized-pnl');
+const metricUnrealizedSub = document.getElementById('metric-unrealized-sub');
 const metricWinRate = document.getElementById('metric-winrate');
 const metricProfitFactor = document.getElementById('metric-profit-factor');
 const metricWinLossCount = document.getElementById('metric-win-loss-count');
@@ -140,7 +142,7 @@ function initCharts(equityData = [], allocationData = []) {
     data: {
       labels: chartLabels,
       datasets: [{
-        label: 'Account Equity ($)',
+        label: 'Account Equity (₹)',
         data: chartBalances,
         borderColor: '#8b5cf6',
         borderWidth: 3,
@@ -168,7 +170,7 @@ function initCharts(equityData = [], allocationData = []) {
           borderWidth: 1,
           callbacks: {
             label: function(context) {
-              return ` Equity: $${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+              return ` Equity: ${formatCurrency(context.parsed.y)}`;
             }
           }
         }
@@ -183,7 +185,7 @@ function initCharts(equityData = [], allocationData = []) {
           ticks: { 
             color: '#6b7280', 
             font: { family: 'Outfit' },
-            callback: value => '$' + value.toLocaleString()
+            callback: value => formatCompactCurrency(value)
           }
         }
       }
@@ -253,7 +255,7 @@ function initCharts(equityData = [], allocationData = []) {
                 const total = context.dataset.data.reduce((a, b) => a + b, 0);
                 const val = context.parsed;
                 const pct = ((val / total) * 100).toFixed(1);
-                return ` ${context.label}: $${val.toLocaleString()} (${pct}%)`;
+                return ` ${context.label}: ${formatCurrency(val)} (${pct}%)`;
               }
             }
           }
@@ -269,59 +271,53 @@ function initCharts(equityData = [], allocationData = []) {
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined || isNaN(val)) return '-';
-  return new Intl.NumberFormat('en-US', {
+  // Indian market: rupees, with the lakh/crore digit grouping of en-IN.
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
-    currency: 'USD'
+    currency: 'INR',
+    maximumFractionDigits: 2
   }).format(val);
 };
 
-// Render Watchlist Panel
-const DEMO_WATCHLIST = [
-  { symbol: 'AAPL', name: 'Apple Inc.' },
-  { symbol: 'MSFT', name: 'Microsoft Corp.' },
-  { symbol: 'NVDA', name: 'NVIDIA Corp.' },
-  { symbol: 'TSLA', name: 'Tesla Inc.' },
-  { symbol: 'AMZN', name: 'Amazon.com Inc.' },
-  { symbol: 'BTC', name: 'Bitcoin (USD)' }
-];
+// Axis ticks: ₹1.2L reads better on a chart than ₹1,20,000.00.
+const formatCompactCurrency = (val) => new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  notation: 'compact',
+  maximumFractionDigits: 1
+}).format(val);
 
-// Instrument keys saved on the server for this account (GAP-9).
+// Watchlist panel: instrument keys saved on the server for this account (GAP-9).
+// There is no demo basket: an empty watchlist is the honest state of a new account.
 let userWatchlist = [];
+
+// A key is only friendly when a trade links it to a symbol; otherwise show the
+// ISIN part so the row is still identifiable.
+function watchlistLabel(key) {
+  const linked = Object.entries(stateManager.getSymbolKeys()).find(([, linkedKey]) => linkedKey === key);
+  return linked ? linked[0] : key.split('|').pop();
+}
 
 function renderWatchlist() {
   watchlistContainer.innerHTML = '';
 
-  DEMO_WATCHLIST.forEach(ticker => {
-    const price = currentPrices[ticker.symbol] || 0;
+  if (userWatchlist.length === 0) {
+    const hint = document.createElement('p');
+    hint.className = 'watchlist-empty';
+    hint.textContent = 'No instruments yet. Record a trade with its key, or add a key below to watch a price.';
+    watchlistContainer.appendChild(hint);
+    return;
+  }
 
-    const item = document.createElement('div');
-    item.className = 'watchlist-item';
-    item.id = `watchlist-${ticker.symbol}`;
-    item.innerHTML = `
-      <div class="ticker-name-box">
-        <span class="ticker-symbol">${escapeHtml(ticker.symbol)}</span>
-        <span class="ticker-company">${escapeHtml(ticker.name)}</span>
-      </div>
-      <div class="ticker-pricing">
-        <div class="ticker-price" id="price-tick-${ticker.symbol}">${formatCurrency(price)}</div>
-      </div>
-    `;
-    watchlistContainer.appendChild(item);
-  });
-
-  // The demo symbols above already cover these keys, so only show the extras.
-  const demoTokens = new Set(Object.values(SYMBOL_TO_TOKEN));
-  const customKeys = userWatchlist.filter(key => !demoTokens.has(key));
-
-  customKeys.forEach(key => {
+  userWatchlist.forEach(key => {
     const price = marketFeed.getKeyPrice(key);
     const item = document.createElement('div');
-    item.className = 'watchlist-item watchlist-item-custom';
+    item.className = 'watchlist-item';
     item.dataset.key = key;
     item.innerHTML = `
       <div class="ticker-name-box">
-        <span class="ticker-symbol ticker-key">${escapeHtml(key)}</span>
-        <span class="ticker-company">Custom instrument</span>
+        <span class="ticker-symbol">${escapeHtml(watchlistLabel(key))}</span>
+        <span class="ticker-company ticker-key">${escapeHtml(key)}</span>
       </div>
       <div class="ticker-pricing">
         <div class="ticker-price">${price === undefined ? '—' : formatCurrency(price)}</div>
@@ -331,13 +327,6 @@ function renderWatchlist() {
     `;
     watchlistContainer.appendChild(item);
   });
-
-  if (customKeys.length === 0) {
-    const hint = document.createElement('p');
-    hint.className = 'watchlist-empty';
-    hint.textContent = 'Add an Upstox instrument key to stream extra symbols.';
-    watchlistContainer.appendChild(hint);
-  }
 
   watchlistContainer.querySelectorAll('.watchlist-remove').forEach(button => {
     button.addEventListener('click', () => removeWatchlistKey(button.dataset.key));
@@ -395,15 +384,24 @@ function removeWatchlistKey(key) {
   saveWatchlist(userWatchlist.filter(existing => existing !== key));
 }
 
-// Custom watchlist rows are keyed by instrument, not by demo symbol, so they
-// refresh from the polled key map instead of the tick listener's symbol lookup.
-function updateCustomWatchPrices() {
-  watchlistContainer.querySelectorAll('.watchlist-item-custom').forEach(row => {
+// Watchlist rows are keyed by instrument, so they refresh from the polled key
+// map and flash when a new tick lands.
+function updateWatchPrices() {
+  watchlistContainer.querySelectorAll('.watchlist-item').forEach(row => {
     const key = row.dataset.key;
     const cell = row.querySelector('.ticker-price');
     if (!key || !cell) return;
+
     const price = marketFeed.getKeyPrice(key);
-    cell.textContent = price === undefined ? '—' : formatCurrency(price);
+    const text = price === undefined ? '—' : formatCurrency(price);
+    const changed = text !== cell.textContent && cell.textContent !== '—';
+    cell.textContent = text;
+
+    if (changed) {
+      cell.classList.remove('price-up', 'price-down');
+      cell.classList.add('price-up');
+      setTimeout(() => cell.classList.remove('price-up'), 800);
+    }
   });
 }
 
@@ -415,19 +413,44 @@ function renderDashboardView(metrics) {
   metricRealizedPnL.className = `metric-val ${metrics.totalRealizedPnL > 0 ? 'text-up' : metrics.totalRealizedPnL < 0 ? 'text-down' : ''}`;
   metricProfitFactor.textContent = `Profit Factor: ${metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)}`;
 
-  metricUnrealizedPnL.textContent = formatCurrency(metrics.totalUnrealizedPnL);
-  metricUnrealizedPnL.className = `metric-val ${metrics.totalUnrealizedPnL > 0 ? 'text-up' : metrics.totalUnrealizedPnL < 0 ? 'text-down' : ''}`;
+  // Unpriced positions hold their cost basis, so the aggregate must say how
+  // many quotes are missing instead of presenting a flat ₹0.00 as the truth.
+  const unpricedCount = metrics.activePositions.filter(pos => !pos.priced).length;
+  const pricedCount = metrics.activePositions.length - unpricedCount;
+
+  if (metrics.activePositions.length > 0 && pricedCount === 0) {
+    metricUnrealizedPnL.textContent = '—';
+    metricUnrealizedPnL.className = 'metric-val';
+    metricUnrealizedSub.textContent = 'No live quote for these positions';
+  } else {
+    metricUnrealizedPnL.textContent = formatCurrency(metrics.totalUnrealizedPnL);
+    metricUnrealizedPnL.className = `metric-val ${metrics.totalUnrealizedPnL > 0 ? 'text-up' : metrics.totalUnrealizedPnL < 0 ? 'text-down' : ''}`;
+    metricUnrealizedSub.textContent = unpricedCount > 0
+      ? `Excludes ${unpricedCount} position${unpricedCount === 1 ? '' : 's'} without a live quote`
+      : 'Open market changes';
+  }
 
   metricWinRate.textContent = `${metrics.winRate.toFixed(1)}%`;
   metricWinLossCount.textContent = `${metrics.winCount} wins / ${metrics.lossCount} losses`;
 
   positionsContainer.innerHTML = '';
   if (metrics.activePositions.length === 0) {
-    positionsContainer.innerHTML = `<div class="text-neutral" style="text-align: center; padding: 20px;">No active positions. Add trades to open.</div>`;
+    positionsContainer.innerHTML = `
+      <div class="empty-state">
+        <p>No open positions yet. Record a buy to start tracking it.</p>
+        <button class="btn btn-secondary btn-sm" type="button" data-action="record-trade">Record your first trade</button>
+      </div>`;
+    positionsContainer.querySelector('[data-action="record-trade"]')
+      .addEventListener('click', openAddTradeModal);
   } else {
     metrics.activePositions.forEach(pos => {
       const isLong = pos.shares > 0;
-      const pnlClass = pos.unrealizedPnL > 0 ? 'text-up' : pos.unrealizedPnL < 0 ? 'text-down' : '';
+      const pnlClass = pos.priced ? (pos.unrealizedPnL > 0 ? 'text-up' : pos.unrealizedPnL < 0 ? 'text-down' : '') : '';
+      const pnlBlock = pos.priced
+        ? `<div class="pos-pnl-val ${pnlClass}">${formatCurrency(pos.unrealizedPnL)}</div>
+           <div class="pos-pnl-pct ${pnlClass}">${pos.unrealizedPnL > 0 ? '+' : ''}${((pos.unrealizedPnL / (Math.abs(pos.shares) * pos.avgCost)) * 100).toFixed(2)}%</div>`
+        : `<div class="pos-pnl-val text-muted" title="This position has no instrumentKey, so it has no live quote">—</div>
+           <div class="pos-pnl-pct">no live quote</div>`;
       const item = document.createElement('div');
       item.className = 'position-item';
       item.innerHTML = `
@@ -439,8 +462,7 @@ function renderDashboardView(metrics) {
           <span class="pos-shares-cost">${Math.abs(pos.shares)} shares @ avg cost ${formatCurrency(pos.avgCost)}</span>
         </div>
         <div class="pos-pnl">
-          <div class="pos-pnl-val ${pnlClass}">${formatCurrency(pos.unrealizedPnL)}</div>
-          <div class="pos-pnl-pct ${pnlClass}">${pos.unrealizedPnL > 0 ? '+' : ''}${((pos.unrealizedPnL / (Math.abs(pos.shares) * pos.avgCost)) * 100).toFixed(2)}%</div>
+          ${pnlBlock}
         </div>
       `;
       positionsContainer.appendChild(item);
@@ -522,7 +544,10 @@ function renderTradeLogView() {
 
   tradesTableBody.innerHTML = '';
   if (filteredTrades.length === 0) {
-    tradesTableBody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 30px;">No trades matched the filters.</td></tr>`;
+    const message = trades.length === 0
+      ? 'No trades yet. Use "Record Trade" to log your first position.'
+      : 'No trades matched the filters.';
+    tradesTableBody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 30px;">${message}</td></tr>`;
     return;
   }
 
@@ -759,9 +784,13 @@ function renderAnalyticsView(metrics) {
 
 // Master view update orchestrator
 function updateAllViews() {
+  // Keep the feed pointed at the keys of the current positions.
+  marketFeed.setSymbolKeys(stateManager.getSymbolKeys());
+
   const metrics = stateManager.getMetrics(currentPrices);
   
   if (currentView === 'dashboard') {
+    renderWatchlist();
     renderDashboardView(metrics);
   } else if (currentView === 'tradelog') {
     renderTradeLogView();
@@ -821,6 +850,7 @@ function openEditTradeModal(tradeId) {
   formTradeId.value = trade.id;
   
   document.getElementById('form-symbol').value = trade.symbol;
+  document.getElementById('form-instrument-key').value = trade.instrumentKey || '';
   document.getElementById('form-side').value = trade.side;
   document.getElementById('form-price').value = trade.price;
   document.getElementById('form-shares').value = trade.shares;
@@ -967,34 +997,18 @@ function startMarketTickerSubscription() {
   marketFeed.subscribe(updates => {
     updates.forEach(upd => {
       currentPrices[upd.symbol] = upd.price;
-
-      if (currentView === 'dashboard') {
-        const tickEl = document.getElementById(`price-tick-${upd.symbol}`);
-        if (tickEl) {
-          tickEl.textContent = formatCurrency(upd.price);
-          
-          const flashClass = upd.change >= 0 ? 'price-up' : 'price-down';
-          tickEl.classList.remove('price-up', 'price-down');
-          tickEl.classList.add(flashClass);
-          
-          setTimeout(() => {
-            tickEl.classList.remove('price-up', 'price-down');
-          }, 800);
-        }
-      }
     });
 
     if (currentView === 'dashboard') {
-      updateCustomWatchPrices();
+      updateWatchPrices();
     }
 
     const metrics = stateManager.getMetrics(currentPrices);
     
+    // renderDashboardView owns every metric card, so a tick must not write a
+    // subset of them first: two writers for one card is how the unrealized
+    // value kept disagreeing with its own caption.
     if (currentView === 'dashboard') {
-      metricUnrealizedPnL.textContent = formatCurrency(metrics.totalUnrealizedPnL);
-      metricUnrealizedPnL.className = `metric-val ${metrics.totalUnrealizedPnL > 0 ? 'text-up' : metrics.totalUnrealizedPnL < 0 ? 'text-down' : ''}`;
-      metricEquity.textContent = formatCurrency(metrics.accountEquity);
-      
       renderDashboardView(metrics);
     }
   });
@@ -1136,6 +1150,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const tradeData = {
       symbol: document.getElementById('form-symbol').value,
+      instrumentKey: document.getElementById('form-instrument-key').value,
       side: document.getElementById('form-side').value,
       price: document.getElementById('form-price').value,
       stopLoss: document.getElementById('form-stoploss').value,
@@ -1149,8 +1164,6 @@ document.addEventListener('DOMContentLoaded', () => {
       mistakes: Array.from(selectedMistakes),
       notes: document.getElementById('form-notes').value
     };
-
-    marketFeed.addTicker(tradeData.symbol, tradeData.price);
 
     if (tradeId) {
       stateManager.editTrade(tradeId, tradeData);
@@ -1241,13 +1254,26 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.readAsText(file);
   });
 
-  // Reset Mock Data
-  btnResetMock.addEventListener('click', () => {
-    if (confirm("This will reset all your trade log entries, strategies, and emotions to the default mock data. Continue?")) {
-      stateManager.resetToMock();
-      currentPrices = marketFeed.getCurrentPrices();
-      showToast("Database restored to defaults.", "success");
-      updateAllViews();
+  // Walkthrough: opened on demand from the Help button (onboarding.js).
+  const tour = mountTour();
+  if (btnHelp) btnHelp.addEventListener('click', () => tour.open());
+
+  // A background write that never reached the server must not look saved.
+  document.addEventListener('sj:sync-error', (event) => {
+    const what = (event.detail && event.detail.what) || 'change';
+    showToast(`The server did not save this ${what}: it only exists in this browser. Reloading may lose it.`, 'danger');
+  });
+
+  document.addEventListener('sj:tour-action', (event) => {
+    const action = event.detail && event.detail.action;
+    if (action === 'record-trade') {
+      tour.close();
+      openAddTradeModal();
+    } else if (action === 'watchlist') {
+      tour.close();
+      const dashboardNav = document.querySelector('.nav-item[data-view="dashboard"]');
+      if (dashboardNav) dashboardNav.click();
+      watchlistInput.focus();
     }
   });
 

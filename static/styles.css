@@ -1544,6 +1544,107 @@ body.auth-locked .app-container {
 }
 
 /* ==========================================================================
+   EMPTY STATES & FORM HINTS
+   ========================================================================== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 34ch;
+  line-height: 1.55;
+}
+
+.form-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dark);
+}
+
+/* ==========================================================================
+   WALKTHROUGH ("Walkthrough & Help")
+   ========================================================================== */
+.tour-container {
+  max-width: 560px;
+}
+
+.tour-body {
+  padding: 22px 24px;
+}
+
+.tour-progress {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.tour-dot {
+  width: 24px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-color-hover);
+  transition: background-color var(--transition-normal);
+}
+
+.tour-dot.active {
+  background: var(--color-primary);
+}
+
+.tour-step-title {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.tour-step-text {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+.tour-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.tour-list li::marker {
+  color: var(--color-primary);
+}
+
+.tour-action {
+  margin-top: 18px;
+}
+
+.tour-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tour-nav {
+  display: flex;
+  gap: 10px;
+}
+
+/* ==========================================================================
    RESPONSIVE — SMALL PHONES
    ========================================================================== */
 @media (max-width: 520px) {

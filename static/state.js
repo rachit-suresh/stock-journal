@@ -1,5 +1,27 @@
-import { initialTrades } from './mockData.js';
 import { apiFetch } from './api.js';
+
+// Writes are optimistic: the UI updates first and the server is told after.
+// When that background write fails the change only exists in this browser, so
+// say so instead of letting it look saved (app.js turns this into a toast).
+function reportSyncFailure(what, error) {
+  console.error(`Failed to sync ${what} with the backend:`, error);
+  try {
+    document.dispatchEvent(new CustomEvent('sj:sync-error', { detail: { what } }));
+  } catch (e) {
+    // No document (or no listener): the console line is the only record left.
+  }
+}
+
+// A write only counts as saved when the server accepted it. A 4xx/5xx comes
+// back as a normal Response, so it has to be turned into a rejection here or
+// the optimistic UI would keep looking successful.
+async function pushOrFail(path, options) {
+  const response = await apiFetch(path, options);
+  if (!response.ok) {
+    throw new Error(`${options.method || 'GET'} ${path} returned ${response.status}`);
+  }
+  return response;
+}
 
 class StateManager {
   constructor() {
@@ -43,7 +65,8 @@ class StateManager {
     // Offline / LocalStorage fallback
     try {
       const storedTrades = localStorage.getItem('stock_journal_trades');
-      this.trades = storedTrades ? JSON.parse(storedTrades) : [...initialTrades];
+      // No demo content: a new account starts with an empty journal.
+      this.trades = storedTrades ? JSON.parse(storedTrades) : [];
 
       const storedStrats = localStorage.getItem('stock_journal_strategies');
       this.strategies = storedStrats ? JSON.parse(storedStrats) : ["Breakout", "Pullback Support", "Gap Fill", "Trend Continuation", "Mean Reversion"];
@@ -56,7 +79,7 @@ class StateManager {
       }
     } catch (e) {
       console.error("Failed to load local state fallback:", e);
-      this.trades = [...initialTrades];
+      this.trades = [];
       this.strategies = ["Breakout", "Pullback Support", "Gap Fill", "Trend Continuation", "Mean Reversion"];
       this.emotions = ["Disciplined", "Confident", "Neutral", "Anxious", "FOMO", "Greedy"];
     }
@@ -84,10 +107,10 @@ class StateManager {
     this.strategies.push(cleanName);
     
     // Asynchronous backend push
-    apiFetch('/api/strategies', {
+    pushOrFail('/api/strategies', {
       method: 'POST',
       body: JSON.stringify({ name: cleanName })
-    }).catch(err => console.error("Failed to sync new strategy with backend:", err));
+    }).catch(err => reportSyncFailure('strategy', err));
 
     try {
       localStorage.setItem('stock_journal_strategies', JSON.stringify(this.strategies));
@@ -103,9 +126,9 @@ class StateManager {
       this.strategies.splice(index, 1);
       
       // Asynchronous backend push
-      apiFetch(`/api/strategies/${encodeURIComponent(actualName)}`, {
+      pushOrFail(`/api/strategies/${encodeURIComponent(actualName)}`, {
         method: 'DELETE'
-      }).catch(err => console.error("Failed to sync strategy deletion with backend:", err));
+      }).catch(err => reportSyncFailure('strategy deletion', err));
 
       try {
         localStorage.setItem('stock_journal_strategies', JSON.stringify(this.strategies));
@@ -139,10 +162,10 @@ class StateManager {
     this.emotions.push(cleanName);
 
     // Asynchronous backend push
-    apiFetch('/api/emotions', {
+    pushOrFail('/api/emotions', {
       method: 'POST',
       body: JSON.stringify({ name: cleanName })
-    }).catch(err => console.error("Failed to sync emotion with backend:", err));
+    }).catch(err => reportSyncFailure('emotion', err));
 
     try {
       localStorage.setItem('stock_journal_emotions', JSON.stringify(this.emotions));
@@ -158,9 +181,9 @@ class StateManager {
       this.emotions.splice(index, 1);
 
       // Asynchronous backend push
-      apiFetch(`/api/emotions/${encodeURIComponent(actualName)}`, {
+      pushOrFail(`/api/emotions/${encodeURIComponent(actualName)}`, {
         method: 'DELETE'
-      }).catch(err => console.error("Failed to sync emotion deletion with backend:", err));
+      }).catch(err => reportSyncFailure('emotion deletion', err));
 
       try {
         localStorage.setItem('stock_journal_emotions', JSON.stringify(this.emotions));
@@ -193,6 +216,9 @@ class StateManager {
     const newTrade = {
       id: tempId,
       symbol: tradeData.symbol.toUpperCase().trim(),
+      instrumentKey: tradeData.instrumentKey
+        ? String(tradeData.instrumentKey).trim().toUpperCase()
+        : null,
       side: tradeData.side,
       price: parseFloat(tradeData.price),
       stopLoss: tradeData.stopLoss ? parseFloat(tradeData.stopLoss) : null,
@@ -212,7 +238,7 @@ class StateManager {
     this.syncTrades(this.trades);
 
     // Asynchronous backend sync
-    apiFetch('/api/trades', {
+    pushOrFail('/api/trades', {
       method: 'POST',
       body: JSON.stringify(newTrade)
     })
@@ -227,7 +253,7 @@ class StateManager {
         }
       }
     })
-    .catch(err => console.error("Failed to save trade to backend:", err));
+    .catch(err => reportSyncFailure('trade', err));
 
     return newTrade;
   }
@@ -241,6 +267,9 @@ class StateManager {
       ...existing,
       ...updatedFields,
       symbol: updatedFields.symbol ? updatedFields.symbol.toUpperCase().trim() : existing.symbol,
+      instrumentKey: updatedFields.instrumentKey !== undefined
+        ? (String(updatedFields.instrumentKey || '').trim().toUpperCase() || null)
+        : (existing.instrumentKey || null),
       price: updatedFields.price ? parseFloat(updatedFields.price) : existing.price,
       stopLoss: updatedFields.stopLoss ? parseFloat(updatedFields.stopLoss) : null,
       pfMatrix: updatedFields.pfMatrix !== undefined && updatedFields.pfMatrix !== '' && updatedFields.pfMatrix !== null ? parseFloat(updatedFields.pfMatrix) : null,
@@ -265,10 +294,10 @@ class StateManager {
     };
 
     // Asynchronous backend edit
-    apiFetch(`/api/trades/${encodeURIComponent(id)}`, {
+    pushOrFail(`/api/trades/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify(payload)
-    }).catch(err => console.error("Failed to sync edited trade with backend:", err));
+    }).catch(err => reportSyncFailure('edit', err));
 
     return updated;
   }
@@ -280,9 +309,9 @@ class StateManager {
       this.syncTrades(this.trades);
 
       // Asynchronous backend deletion
-      apiFetch(`/api/trades/${encodeURIComponent(id)}`, {
+      pushOrFail(`/api/trades/${encodeURIComponent(id)}`, {
         method: 'DELETE'
-      }).catch(err => console.error("Failed to delete trade from backend:", err));
+      }).catch(err => reportSyncFailure('deletion', err));
 
       return true;
     }
@@ -318,10 +347,10 @@ class StateManager {
         this.syncTrades(this.trades);
         
         // Push full state to backend
-        apiFetch('/api/journal/import', {
+        pushOrFail('/api/journal/import', {
           method: 'POST',
           body: JSON.stringify(data)
-        }).catch(err => console.error("Failed to sync imported data to backend:", err));
+        }).catch(err => reportSyncFailure('import', err));
 
         return true;
       }
@@ -331,30 +360,19 @@ class StateManager {
     return false;
   }
 
-  resetToMock() {
-    this.trades = [...initialTrades];
-    this.strategies = ["Breakout", "Pullback Support", "Gap Fill", "Trend Continuation", "Mean Reversion"];
-    this.emotions = ["Disciplined", "Confident", "Neutral", "Anxious", "FOMO", "Greedy"];
-    
-    this.syncTrades(this.trades);
-
-    // Call reset on backend
-    apiFetch('/api/journal/reset', {
-      method: 'POST'
-    }).catch(err => console.error("Failed to sync database reset to backend:", err));
-  }
-
-  clearAll() {
-    this.trades = [];
-    this.syncTrades(this.trades);
-    
-    apiFetch('/api/journal/import', {
-      method: 'POST',
-      body: JSON.stringify({ trades: [], strategies: this.strategies, emotions: this.emotions })
-    }).catch(err => console.error("Failed to clear backend database:", err));
-  }
-
   // --- PORTFOLIO CALCULATION ENGINE ---
+  // Symbol -> instrument key for the live feed. The latest trade for a symbol
+  // wins, so editing a trade's key re-points its live price.
+  getSymbolKeys() {
+    const map = {};
+    [...this.trades]
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .forEach(t => {
+        if (t.symbol && t.instrumentKey) map[t.symbol] = t.instrumentKey;
+      });
+    return map;
+  }
+
   getMetrics(currentPrices = {}) {
     const chronologicalTrades = [...this.trades].sort((a, b) => {
       return new Date(a.date).getTime() - new Date(b.date).getTime();
@@ -491,7 +509,12 @@ class StateManager {
     Object.keys(positions).forEach(symbol => {
       const pos = positions[symbol];
       if (pos.shares !== 0) {
-        const curPrice = currentPrices[symbol] || pos.avgCost;
+        // A position with no live quote must not borrow its own average cost:
+        // that reports a flat ₹0.00 P&L, which reads as "the market has not
+        // moved" instead of "we do not know". Keep it at cost and say so.
+        const quote = currentPrices[symbol];
+        const priced = typeof quote === 'number' && Number.isFinite(quote) && quote > 0;
+        const curPrice = priced ? quote : pos.avgCost;
         let unrealizedPnL = 0;
         
         if (pos.shares > 0) {
@@ -506,6 +529,7 @@ class StateManager {
           shares: pos.shares,
           avgCost: pos.avgCost,
           currentPrice: curPrice,
+          priced,
           unrealizedPnL,
           marketValue: Math.abs(pos.shares) * curPrice
         });

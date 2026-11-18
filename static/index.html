@@ -15,7 +15,7 @@
       (LOCAL_HOSTS.includes(window.location.hostname) ? "" : "https://stock-journal-xenm.onrender.com");
   </script>
   <!-- Google Fonts & Stylesheets -->
-  <link rel="stylesheet" href="styles.css?v=2.13">
+  <link rel="stylesheet" href="styles.css?v=2.15">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -103,6 +103,13 @@
           <span class="account-email" id="account-email">—</span>
           <button class="btn btn-secondary btn-sm" id="btn-signout" type="button">Sign out</button>
         </div>
+        <button class="btn btn-secondary btn-sm" id="btn-help" type="button" title="Open the walkthrough">
+          <!-- Help / Book Icon -->
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"></path>
+          </svg>
+          Walkthrough &amp; Help
+        </button>
         <button class="btn btn-secondary btn-sm" id="btn-export">
           <!-- Export/Download Icon -->
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -116,13 +123,6 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"></path>
           </svg>
           Import Journal
-        </button>
-        <button class="btn btn-danger-outline btn-sm" id="btn-reset-mock" style="margin-top: 8px;">
-          <!-- Reset Icon -->
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"></path>
-          </svg>
-          Reset Mock Data
         </button>
         <input type="file" id="file-import-input" accept=".json" style="display: none;">
       </div>
@@ -165,7 +165,7 @@
             <div class="card metric-card">
               <span class="card-title">Net Equity</span>
               <div>
-                <div class="metric-val" id="metric-equity">$100,000.00</div>
+                <div class="metric-val" id="metric-equity">₹1,00,000.00</div>
                 <div class="metric-sub">
                   Total account valuation
                 </div>
@@ -175,7 +175,7 @@
             <div class="card metric-card">
               <span class="card-title">Realized P&L</span>
               <div>
-                <div class="metric-val" id="metric-realized-pnl">$0.00</div>
+                <div class="metric-val" id="metric-realized-pnl">₹0.00</div>
                 <div class="metric-sub" id="metric-profit-factor">
                   Profit Factor: 1.00
                 </div>
@@ -185,8 +185,8 @@
             <div class="card metric-card">
               <span class="card-title">Unrealized P&L</span>
               <div>
-                <div class="metric-val" id="metric-unrealized-pnl">$0.00</div>
-                <div class="metric-sub">
+                <div class="metric-val" id="metric-unrealized-pnl">₹0.00</div>
+                <div class="metric-sub" id="metric-unrealized-sub">
                   Open market changes
                 </div>
               </div>
@@ -228,13 +228,13 @@
             <div class="card">
               <span class="card-title">Active Positions</span>
               <div class="positions-list" id="positions-container">
-                <div class="text-neutral" style="text-align: center; padding: 20px;">No active positions. Add trades to open.</div>
+                <div class="empty-state">No open positions yet. Record a buy to start tracking one.</div>
               </div>
             </div>
             
             <!-- Watchlist with Tick Updates -->
             <div class="card">
-              <span class="card-title">Live Watchlist</span>
+              <span class="card-title">Your Watchlist</span>
               <div class="watchlist-list" id="watchlist-container">
                 <!-- Loaded dynamically -->
               </div>
@@ -250,7 +250,9 @@
                 <button class="btn btn-primary btn-sm" type="submit">Add</button>
               </form>
               <p class="watchlist-hint">
-                Instrument keys come from Upstox, e.g. <code>NSE_EQ|INE002A01018</code>.
+                Keys start with the segment (<code>NSE_EQ</code>) then the ISIN, e.g.
+                <code>NSE_EQ|INE002A01018</code> for SBIN. Add one here to watch a price
+                without recording a trade.
               </p>
             </div>
             
@@ -391,12 +393,12 @@
             </div>
             <div class="card">
               <div style="color: var(--text-muted); font-size: 13px; font-weight:600; margin-bottom:8px;">Average Win</div>
-              <div class="metric-val text-up" id="analytics-avg-win">$0.00</div>
+              <div class="metric-val text-up" id="analytics-avg-win">₹0.00</div>
               <span style="font-size: 12px; color: var(--text-dark);">Mean payoff of green trades</span>
             </div>
             <div class="card">
               <div style="color: var(--text-muted); font-size: 13px; font-weight:600; margin-bottom:8px;">Average Loss</div>
-              <div class="metric-val text-down" id="analytics-avg-loss">$0.00</div>
+              <div class="metric-val text-down" id="analytics-avg-loss">₹0.00</div>
               <span style="font-size: 12px; color: var(--text-dark);">Mean payoff of red trades</span>
             </div>
             <div class="card">
@@ -483,7 +485,7 @@
           <div class="form-row">
             <div class="form-group">
               <label for="form-symbol">Symbol *</label>
-              <input type="text" class="form-input" id="form-symbol" placeholder="e.g. AAPL, BTC" required>
+              <input type="text" class="form-input" id="form-symbol" placeholder="e.g. RELIANCE, TCS" required>
             </div>
             <div class="form-group">
               <label for="form-side">Action *</label>
@@ -493,16 +495,24 @@
               </select>
             </div>
           </div>
+
+          <!-- Live price link -->
+          <div class="form-group">
+            <label for="form-instrument-key">Upstox instrument key (optional)</label>
+            <input type="text" class="form-input" id="form-instrument-key"
+                   placeholder="NSE_EQ|INE002A01018" spellcheck="false" autocapitalize="characters">
+            <p class="form-hint">Links this position to a live price. Leave it empty to journal the trade without a quote.</p>
+          </div>
           
           <!-- Row 2: Price & Stop Loss -->
           <div class="form-row">
             <div class="form-group">
-              <label for="form-price">Execution Price ($) *</label>
-              <input type="number" step="0.01" min="0.001" class="form-input" id="form-price" placeholder="0.00" required>
+              <label for="form-price">Execution Price (₹) *</label>
+              <input type="number" step="0.01" min="0.01" class="form-input" id="form-price" placeholder="0.00" required>
             </div>
             <div class="form-group">
-              <label for="form-stoploss">Stop Loss ($)</label>
-              <input type="number" step="0.01" min="0.001" class="form-input" id="form-stoploss" placeholder="0.00 (Optional)">
+              <label for="form-stoploss">Stop Loss (₹)</label>
+              <input type="number" step="0.01" min="0.01" class="form-input" id="form-stoploss" placeholder="0.00 (Optional)">
             </div>
           </div>
 
@@ -630,7 +640,33 @@
     </div>
   </div>
 
+  <!-- MODAL: WALKTHROUGH / HELP (first run + Help button) -->
+  <div class="modal-overlay" id="modal-tour" role="dialog" aria-modal="true" aria-labelledby="tour-step-title">
+    <div class="modal-container tour-container">
+      <div class="modal-header">
+        <h3>How StockJournal works</h3>
+        <button class="modal-close" id="tour-close" type="button" aria-label="Close the walkthrough">&times;</button>
+      </div>
+
+      <div class="modal-body tour-body">
+        <div class="tour-progress" id="tour-progress" aria-hidden="true"></div>
+        <h4 class="tour-step-title" id="tour-step-title">Welcome</h4>
+        <p class="tour-step-text" id="tour-step-text"></p>
+        <ul class="tour-list" id="tour-list"></ul>
+        <button class="btn btn-secondary btn-sm tour-action" id="tour-action" type="button" hidden></button>
+      </div>
+
+      <div class="modal-footer tour-footer">
+        <button class="btn btn-secondary" id="tour-skip" type="button">Skip</button>
+        <div class="tour-nav">
+          <button class="btn btn-secondary" id="tour-prev" type="button">Back</button>
+          <button class="btn btn-primary" id="tour-next" type="button">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Main Application Orchestrator Script -->
-  <script type="module" src="app.js?v=2.13"></script>
+  <script type="module" src="app.js?v=2.15"></script>
 </body>
 </html>
