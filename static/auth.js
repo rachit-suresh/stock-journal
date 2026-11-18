@@ -15,6 +15,8 @@ const SUPABASE_JS = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 // Verified tokens expire in an hour; refresh before the last half minute.
 const REFRESH_WINDOW_MS = 30_000;
 const MIN_PASSWORD_LENGTH = 6;
+// A sign-in request that never settles must not freeze the form forever.
+const AUTH_TIMEOUT_MS = 20_000;
 
 let supabase = null;
 let devMode = false;
@@ -58,14 +60,22 @@ function renderForm() {
   const submit = byId('auth-submit');
   const toggle = byId('auth-toggle');
   const password = byId('auth-password');
+  const subtitle = byId('auth-subtitle');
   if (!submit || !toggle) return;
 
   const signup = formMode === 'signup';
   submit.textContent = signup ? 'Create account' : 'Sign in';
-  submit.disabled = submitting;
+  // A gate whose Supabase client never started must not look clickable: the
+  // silent `return` in onSubmit made it read as a dead button.
+  submit.disabled = submitting || !supabase;
   toggle.textContent = signup
     ? 'Already have an account? Sign in'
     : 'New here? Create an account';
+  if (subtitle) {
+    subtitle.textContent = signup
+      ? 'Create an account to start your journal.'
+      : 'Sign in to open your trading journal.';
+  }
   if (password) {
     password.setAttribute('autocomplete', signup ? 'new-password' : 'current-password');
   }
@@ -100,9 +110,34 @@ function friendlyError(error) {
   return message;
 }
 
+/**
+ * Reject once `ms` passes. Without this a request that hangs leaves
+ * `submitting` true, the button disabled and every later click ignored.
+ */
+function withTimeout(promise, what, ms = AUTH_TIMEOUT_MS) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${what} timed out after ${ms / 1000}s. Check the connection and try again.`)),
+        ms
+      )
+    ),
+  ]);
+}
+
 async function onSubmit(event) {
   event.preventDefault();
-  if (!supabase || submitting) return;
+  if (submitting) return;
+  if (!supabase) {
+    // Never return silently here: a click that does nothing is the hardest
+    // failure to report, and this is what a dead gate used to look like.
+    setNote(
+      'Sign-in did not start. Reload the page - if this repeats, supabase-js ' +
+      'or GET /auth/config failed to load.'
+    );
+    return;
+  }
 
   const email = byId('auth-email')?.value.trim() || '';
   const password = byId('auth-password')?.value || '';
@@ -121,7 +156,10 @@ async function onSubmit(event) {
 
   try {
     if (formMode === 'signup') {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await withTimeout(
+        supabase.auth.signUp({ email, password }),
+        'Creating the account'
+      );
       if (error) throw error;
       if (!data.session) {
         // "Confirm email" is still switched on for this Supabase project.
@@ -130,7 +168,10 @@ async function onSubmit(event) {
         return;
       }
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password }),
+        'Signing in'
+      );
       if (error) throw error;
     }
     // The auth listener reveals the app; don't leave the password behind.
@@ -148,7 +189,9 @@ async function onSubmit(event) {
 
 function toggleFormMode() {
   formMode = formMode === 'signup' ? 'signin' : 'signup';
-  setNote('');
+  // With a client this note only describes the last attempt. Without one it
+  // says why the gate cannot work, so switching mode must not erase it.
+  if (supabase) setNote('');
   renderForm();
   byId('auth-email')?.focus();
 }

@@ -1,5 +1,9 @@
-import { stateManager } from './state.js?v=2.12';
-import { marketFeed, SYMBOL_TO_TOKEN } from './mockApi.js?v=2.12';
+// Import specifiers stay unversioned: `./auth.js?v=2.12` in one file and
+// `./auth.js` in another are two module instances, so the gate would wire
+// itself twice and Supabase would create two clients. Cache busting lives on
+// the two entry points in index.html instead.
+import { stateManager } from './state.js';
+import { marketFeed, SYMBOL_TO_TOKEN } from './mockApi.js';
 import { apiFetch } from './api.js';
 
 // ==========================================================================
@@ -937,7 +941,29 @@ function closeTradeDetailModal() {
 // ==========================================================================
 // PRICE Ticker & SIMULATOR SUBSCRIPTION
 // ==========================================================================
+function renderFeedStatus({ live, lastTickAt, error }) {
+  const label = document.getElementById('feed-status-label');
+  const dot = document.getElementById('feed-status-dot');
+  if (!label || !dot) return;
+
+  dot.classList.toggle('pulsing', live);
+  dot.classList.toggle('stale', !live);
+  if (error) {
+    label.textContent = 'FEED OFFLINE';
+  } else if (live) {
+    label.textContent = 'LIVE FEED ACTIVE';
+  } else if (lastTickAt) {
+    // The socket can be open with the market shut: say how old the last tick
+    // is instead of letting a frozen price look like a live one.
+    const minutes = Math.max(1, Math.round((Date.now() - lastTickAt) / 60000));
+    label.textContent = `NO LIVE TICKS - LAST ${minutes}m AGO`;
+  } else {
+    label.textContent = 'WAITING FOR LIVE TICKS';
+  }
+}
+
 function startMarketTickerSubscription() {
+  marketFeed.onStatus(renderFeedStatus);
   marketFeed.subscribe(updates => {
     updates.forEach(upd => {
       currentPrices[upd.symbol] = upd.price;

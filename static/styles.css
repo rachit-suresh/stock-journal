@@ -252,6 +252,14 @@ html, body {
   animation: pulse 1.5s infinite alternate;
 }
 
+/* No tick inside the freshness window: the feed is not live even though the
+   socket may still be open, so the badge must not read "LIVE". */
+.status-dot.stale {
+  background-color: var(--color-warning, #f59e0b);
+  box-shadow: 0 0 10px var(--color-warning, #f59e0b);
+  animation: none;
+}
+
 /* Page Views Container */
 .content-body {
   flex-grow: 1;
@@ -1084,6 +1092,12 @@ body.auth-locked .app-container {
   margin-top: 4px;
 }
 
+/* `display: flex` above outranks the UA rule for the `hidden` attribute, so the
+   form used to sit there looking usable on a gate that never started. */
+.auth-form[hidden] {
+  display: none;
+}
+
 .auth-field {
   display: flex;
   flex-direction: column;
@@ -1145,9 +1159,12 @@ body.auth-locked .app-container {
 
 .auth-note {
   font-size: 12px;
-  color: var(--text-dark);
+  /* --text-dark on the card is only ~4:1, and this is the one line that says
+     why a sign-in failed. */
+  color: var(--text-muted);
   min-height: 16px;
   line-height: 1.5;
+  text-align: center;
 }
 
 /* ==========================================================================

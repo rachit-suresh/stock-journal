@@ -4,7 +4,7 @@
 // to finish and carry the token; a 401 means the session is gone and the user
 // is signed out instead of being left with a silently empty dashboard.
 
-import { getAuthToken, handleUnauthorized, authSuspended } from './auth.js?v=2.12';
+import { getAuthToken, handleUnauthorized, authSuspended } from './auth.js';
 
 export const getBaseUrl = () => window.FASTAPI_BACKEND_URL || window.API_BASE_URL || '';
 

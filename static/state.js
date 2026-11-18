@@ -1,5 +1,5 @@
-import { initialTrades } from './mockData.js?v=2.12';
-import { apiFetch } from './api.js?v=2.12';
+import { initialTrades } from './mockData.js';
+import { apiFetch } from './api.js';
 
 class StateManager {
   constructor() {

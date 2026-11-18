@@ -1,5 +1,5 @@
-import { apiFetch } from './api.js?v=2.12';
-import { authSuspended } from './auth.js?v=2.12';
+import { apiFetch } from './api.js';
+import { authSuspended } from './auth.js';
 
 export const SYMBOL_TO_TOKEN = {
   AAPL: 'NSE_EQ|INE062A01020',  // mapped to SBIN
@@ -26,6 +26,12 @@ class MockMarketFeed {
     // subscribes them for streaming; the ticker polls the same set.
     this.extraKeys = [];
     this.keyPrices = {};
+    // Feed health, so the header badge can stop claiming "LIVE" while the
+    // backend has no ticks (market closed, token rejected, socket silent).
+    this.live = null; // null until the first poll answers
+    this.lastTickAt = null;
+    this.feedError = null;
+    this.statusListeners = [];
     this.startSimulation();
   }
 
@@ -51,6 +57,34 @@ class MockMarketFeed {
     return () => {
       this.listeners = this.listeners.filter(l => l !== callback);
     };
+  }
+
+  /** Feed health as `{live, lastTickAt, error}`; fires on every change. */
+  onStatus(callback) {
+    this.statusListeners.push(callback);
+    if (this.live !== null || this.feedError) callback(this.getStatus());
+    return () => {
+      this.statusListeners = this.statusListeners.filter(l => l !== callback);
+    };
+  }
+
+  getStatus() {
+    return { live: this.live === true, lastTickAt: this.lastTickAt, error: this.feedError };
+  }
+
+  setStatus(live, lastTickAt, error = null) {
+    if (live === this.live && lastTickAt === this.lastTickAt && error === this.feedError) return;
+    this.live = live;
+    this.lastTickAt = lastTickAt;
+    this.feedError = error;
+    const status = this.getStatus();
+    this.statusListeners.forEach(callback => {
+      try {
+        callback(status);
+      } catch (e) {
+        console.error('Error in feed status listener:', e);
+      }
+    });
   }
 
   // Add a new custom ticker to the simulation if it doesn't exist
@@ -79,7 +113,8 @@ class MockMarketFeed {
 
         const response = await apiFetch(`/api/prices?tokens=${encodeURIComponent(tokensToPoll)}`);
         const json = await response.json();
-        
+        const meta = (json && json.meta) || {};
+
         if (json && json.data) {
           const liveData = json.data;
           this.keyPrices = { ...liveData };
@@ -87,6 +122,9 @@ class MockMarketFeed {
 
           Object.keys(SYMBOL_TO_TOKEN).forEach(symbol => {
             const token = SYMBOL_TO_TOKEN[symbol];
+            // A token the backend has never ticked comes back as the 100.0
+            // placeholder; painting it would show $100 for every symbol.
+            if (!meta[token] || meta[token].as_of === null) return;
             let newPrice = liveData[token];
 
             if (newPrice !== undefined) {
@@ -112,9 +150,18 @@ class MockMarketFeed {
           if (updatedList.length > 0) {
             this.notifyBulkListeners(updatedList);
           }
+
+          // meta carries one entry per token the poll asked for, so the newest
+          // `as_of` and any `stale: false` together describe the whole feed.
+          const stamps = Object.values(meta)
+            .map(entry => (entry && entry.as_of) || null)
+            .filter(Boolean);
+          const fresh = Object.values(meta).some(entry => entry && entry.stale === false);
+          this.setStatus(fresh, stamps.length ? Math.max(...stamps) : null);
         }
       } catch (err) {
         console.error("Failed to poll real-time prices from FastAPI:", err);
+        this.setStatus(false, this.lastTickAt, err?.message || String(err));
       }
     };
 
