@@ -46,8 +46,8 @@ Two independent state owners exist by design: the server (Postgres, authoritativ
 
 ### M2 — Database Handle · `app/core/database.py`
 - **Role:** single asyncpg pool holder + FastAPI dependency; the DDL lives next door in `schema.py`.
-- **Key symbols:** `create_pool(dsn)`, `connect_to_database()`, `close_database_connection()`, `get_pool()`, `database_status()`.
-- **Behaviour:** `min_size=1`, `max_size=5`, `command_timeout=30`, and **`statement_cache_size=0`** because Supabase's pooler cannot keep server-side prepared statements. Every connection gets a `jsonb` codec, so repositories pass plain dicts. `connect_to_database()` then runs `ensure_schema()`.
+- **Key symbols:** `create_pool(dsn)`, `ssl_mode_for(dsn)`, `dsn_problems(dsn)`, `connect_to_database()`, `close_database_connection()`, `get_pool()`, `database_status()`.
+- **Behaviour:** `min_size=1`, `max_size=5`, `command_timeout=30`, and **`statement_cache_size=0`** because Supabase's pooler cannot keep server-side prepared statements. `ssl` is `require` for any non-loopback host whose DSN does not say otherwise, since `asyncpg` reads a bare DSN as `disable`. Every connection gets a `jsonb` codec, so repositories pass plain dicts. `connect_to_database()` runs `dsn_problems()` first - a reserved character in the password (`?`, `#`) truncates the URI and `asyncpg` blames a bogus query field - then `ensure_schema()`.
 - **Failure mode:** a pool that cannot open (bad DSN, IPv6-only direct host, wrong password) is logged, not raised - the app still boots, `/health` reports `database: unavailable`, and data routes answer `503` from `get_pool()` instead of per-request `500`s.
 - **Extension point:** repository factories take `pool: asyncpg.Pool = Depends(get_pool)` - tests override the *endpoint* factories, not this one.
 

@@ -164,11 +164,22 @@ Before pushing to production, verify all pre-flight checks:
   1. `DATABASE_URL` uses the **direct** host `db.<ref>.supabase.co`. That host resolves to IPv6 only, and Render has no IPv6 egress. Use the **Session pooler** URI from Dashboard → Connect instead.
   2. The password was not re-copied after a reset, or the `[YOUR-PASSWORD]` placeholder is still in the string.
   3. The connection string is missing its scheme (`postgresql://`) because the dashboard URL was pasted instead of the connection string.
+  4. The password contains a reserved character that was never encoded - see Issue 1c.
 - **Verify**: `/health` → `database`; then `psql "$DATABASE_URL" -c 'select 1'` from any machine that can reach Supabase. Note that the pooler also requires the pooler username form `postgres.<ref>` — the plain `postgres` user only exists on the direct host.
 
 ### Issue 1b: `prepared statement "__asyncpg_stmt_…" does not exist`
 - **Cause**: server-side prepared statements do not survive a transaction pooler.
 - **Fix**: already handled — the pool is created with `statement_cache_size=0`. Do not remove that argument, and prefer the **session** pooler URI for the same reason.
+
+### Issue 1c: `bad query field: '<tail of your password>@aws-1-….pooler.supabase.com:5432/postgres'`
+- **Symptom**: Render logs show `Failed to connect to Postgres: bad query field: ...` and `/health` stays at `"database": "unavailable"`. The host in the message is real and correct, which sends you looking in the wrong place.
+- **Cause**: a reserved character in the **password**. `?` ends the authority and starts the query string, so `user:password` becomes the netloc and the host plus port become a bogus query field; `#` does the same to the fragment. Render stores the value verbatim, so `asyncpg` never sees a host at all.
+- **Fix**: percent-encode the password and paste the encoded form — `?`→`%3F`, `#`→`%23`, `%`→`%25`, `@`→`%40`, `/`→`%2F`, `:`→`%3A`. To produce it locally:
+  ```bash
+  python -c "from urllib.parse import quote; print(quote('<raw password>', safe=''))"
+  ```
+  Alternatively reset the database password (Dashboard → Settings → Database) to an alphanumeric-only value, which needs no encoding and survives future copy-paste.
+- **Note**: `connect_to_database()` checks the URI before talking to Postgres and logs `DATABASE_URL is unusable, a reserved character in the password …` instead of the misleading `asyncpg` error.
 
 ### Issue 2: Vercel Rewrites for Backend Proxying
 - **Symptom**: Frontend fetch requests to `/api/...` receive 404 HTML responses on Vercel.

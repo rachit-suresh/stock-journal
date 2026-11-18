@@ -16,7 +16,7 @@ from pathlib import Path
 import asyncpg
 import pytest
 
-from app.core.database import create_pool, ssl_mode_for
+from app.core.database import create_pool, dsn_problems, ssl_mode_for
 from app.core.schema import ensure_schema
 from app.repositories.postgres.emotion_repository import PostgresEmotionRepository
 from app.repositories.postgres.strategy_repository import PostgresStrategyRepository
@@ -114,6 +114,33 @@ def emotions(pool, owner):
 )
 def test_ssl_mode_follows_the_dsn(dsn, expected):
     assert ssl_mode_for(dsn) == expected
+
+
+@pytest.mark.parametrize(
+    "dsn, ok",
+    [
+        # A `?` in the password ends the authority, so the host and port vanish
+        # and asyncpg reports `bad query field` naming the password's tail.
+        (
+            "postgresql://postgres.abc:pAss?$4%9zu@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
+            False,
+        ),
+        ("postgresql://u:p#w@db.example.com:5432/postgres", False),
+        ("postgresql://postgres.abc:secret@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres", True),
+        ("postgresql://u:p@db.example.com/postgres", True),
+        ("postgresql://postgres:postgres@127.0.0.1:5432/postgres", True),
+    ],
+)
+def test_dsn_problems_flags_a_truncated_uri(dsn, ok):
+    assert (dsn_problems(dsn) is None) is ok
+
+
+def test_dsn_problems_names_a_missing_database():
+    assert "database name" in dsn_problems("postgresql://u:p@db.example.com:5432")
+
+
+def test_dsn_problems_rejects_another_scheme():
+    assert "postgresql://" in dsn_problems("mysql://u:p@db.example.com:3306/db")
 
 
 # --- Schema ---------------------------------------------------------------

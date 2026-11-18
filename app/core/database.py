@@ -16,6 +16,12 @@ logger = logging.getLogger("database")
 # Databases that are reached over loopback or a unix socket in development.
 _LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1", "[::1]"}
 
+# Characters that must be percent-encoded inside the password of a URI.
+_ENCODE_HINT = (
+    "a reserved character in the password (? # / % @) ends the URI early - "
+    "percent-encode the password: ? -> %3F, # -> %23, % -> %25, @ -> %40, / -> %2F"
+)
+
 
 class DatabaseManager:
     pool: Optional[asyncpg.Pool] = None
@@ -46,6 +52,31 @@ def ssl_mode_for(dsn: str) -> Optional[str]:
     return "require"
 
 
+def dsn_problems(dsn: str) -> Optional[str]:
+    """Why `dsn` cannot be a connection URI, or `None` when it is usable.
+
+    A reserved character in the password ends the authority early: `?` starts
+    the query and `#` the fragment, so the host and port are silently lost and
+    `asyncpg` fails with `bad query field: '<rest of the password>'`, which
+    blames the host instead of the password.
+    """
+    parsed = urlparse(dsn)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        return "it must start with postgresql://"
+    if dsn.count("?") > 1 or "#" in dsn:
+        return _ENCODE_HINT
+    try:
+        parsed.port
+    except ValueError:
+        # `host:password` was left over once `?` cut the netloc short.
+        return _ENCODE_HINT
+    if not parsed.hostname or "@" not in parsed.netloc:
+        return _ENCODE_HINT
+    if not parsed.path.strip("/"):
+        return "the database name is missing - append /postgres"
+    return None
+
+
 async def create_pool(dsn: str) -> asyncpg.Pool:
     # Hosted Postgres (Supabase included) refuses plaintext, but asyncpg reads a
     # DSN without `sslmode` as `disable`, so the handshake died before the
@@ -69,6 +100,13 @@ async def connect_to_database() -> None:
     process still boots and /health can report the problem (SPEC-CFG-7)."""
     if not settings.DATABASE_URL:
         logger.error("DATABASE_URL is not set; data routes will answer 503.")
+        return
+
+    # Diagnose a malformed URI here: asyncpg's own message points at the host,
+    # which sends you looking in the wrong place.
+    problem = dsn_problems(settings.DATABASE_URL)
+    if problem:
+        logger.error(f"DATABASE_URL is unusable, {problem}. Data routes will answer 503.")
         return
 
     try:
