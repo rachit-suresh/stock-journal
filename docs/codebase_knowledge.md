@@ -20,7 +20,7 @@ Use it as the entry point before changing code; use the documents in [§9](#9-re
 | Abuse limits | In-memory sliding-window rate limit on mutations per `(user, ip)` + hard per-user caps checked before insert |
 | Frontend | Vanilla ES modules, no build step, Chart.js from CDN. All analytics are computed **client-side**; responsive down to ~360px wide |
 | Deployment | Backend/streamer on Render; static UI on Vercel with `/api/*` and `/auth/config` rewritten to the Render host (`vercel.json`) |
-| Tests | pytest (+ pytest-asyncio, TestClient, in-memory repositories, real Postgres via `pgserver`), 78 tests |
+| Tests | pytest (+ pytest-asyncio, TestClient, in-memory repositories, real Postgres via `pgserver`), 91 tests |
 
 Two independent state owners exist by design: the server (Postgres, authoritative) and the browser (`state.js`, optimistic + localStorage fallback). Most surprises in this repo come from that split.
 
@@ -76,25 +76,24 @@ Each module owns its own dependency factory that *instantiates* a repository fro
 | `strategies.py` | `GET/POST /api/strategies`, `DELETE /api/strategies/{name}` | `get_strategy_repo` → `PostgresStrategyRepository` | Postgres |
 | `emotions.py` | `GET/POST /api/emotions`, `DELETE /api/emotions/{name}` | `get_emotion_repo` → `PostgresEmotionRepository` | Postgres |
 | `watchlist.py` | `GET/PUT /api/watchlist` | `get_watchlist_repo` → `PostgresWatchlistRepository` | Postgres |
-| `journal.py` | `GET /api/journal`, `POST /api/journal/reset`, `POST /api/journal/import` (legacy `?action=&type=` routes removed) | `get_journal_service` → `JournalService(Postgres*, Postgres*, Postgres*)` | Postgres |
+| `journal.py` | `GET /api/journal`, `POST /api/journal/import` (legacy `?action=&type=` routes and the old `POST /journal/reset` removed) | `get_journal_service` → `JournalService(Postgres*, Postgres*, Postgres*)` | Postgres |
 
 - **Authentication:** declared once per router (`APIRouter(dependencies=[Depends(get_current_user)])`), so it cannot be forgotten on a new route. FastAPI caches the dependency, so the access token is verified once per request and the same `UserContext` feeds the repository factory.
 - **Response envelope (universal):** `{"success": true, "data": ...}` for reads/writes, `{"success": true, "message": "..."}` for verbs without a payload.
 - **Error idiom:** `raise HTTPException(status_code=404|400, detail="...")`. No try/except in endpoints; unexpected exceptions bubble to FastAPI's 500 handler. Foreign-owner rows answer `404` (never `403`) so ids cannot be probed. A missing pool surfaces as `503` from `get_pool()`.
 - **Write guards:** `POST /trades`, `POST /strategies`, `POST /emotions` call `enforce_cap(len(await repo.get_all_*()), settings.MAX_*_PER_USER, "Trade")` first; every mutating route also carries `Depends(mutation_rate_limit)`.
 - **`prices.py`:** empty/missing `tokens` → `{"data": {}, "meta": {}, "timestamp": <ms epoch>}`. Unknown tokens come back as `100.0` (cache default), never as missing keys, and are flagged `meta[token] = {as_of: null, stale: true}`. Prices are global, not per owner.
-- **`journal.py` is one REST surface:** `/journal` (GET only), `/journal/reset`, `/journal/import`. The old query-param compat handlers (`POST ?action=|type=`, `PUT ?id=`, `DELETE ?type=&name=|?id=`) were removed in GAP-3b and now return 405.
+- **`journal.py` is one REST surface:** `/journal` (GET only) and `/journal/import`. The old query-param compat handlers (`POST ?action=|type=`, `PUT ?id=`, `DELETE ?type=&name=|?id=`) were removed in GAP-3b and now return 405; the reset-to-demo route was removed in v1.6 and now answers 404/405.
 - **`/journal/import`** reads a raw `await request.json()` (no Pydantic model) and calls the owner-scoped `reset_*` methods. It now refuses a payload whose `trades`/`strategies`/`emotions` are not lists, or whose trade count exceeds `MAX_TRADES_PER_USER`; individual trade dicts still skip validation and sanitisation (GAP-2).
-- **`watchlist.py`:** `GET` returns the stored keys, falling back to `settings.get_tokens()` for an account that never saved one; both verbs call `subscriptions.set_user_keys(user_id, keys)` so the streamer picks the change up on its next sync.
+- **`watchlist.py`:** `GET` returns the stored keys - empty until the user adds their own, since the shared `TOKENS` hand-out was removed in v1.6. Both verbs call `subscriptions.set_user_keys(user_id, keys)` so the streamer picks the change up on its next sync.
 - **Gotcha:** `DELETE /api/strategies/{name}` and `/api/emotions/{name}` take a raw path segment — callers must `encodeURIComponent` (names contain spaces, e.g. `Pullback Support`).
 
 ### M5 — Domain Service · `app/services/journal_service.py`
-- **Role:** the only place with domain rules: default taxonomy, seeding, overview assembly, reset.
-- **Key symbols:** `JournalService`, `DEFAULT_STRATEGIES` (Breakout, Pullback Support, Gap Fill, Trend Continuation, Mean Reversion), `DEFAULT_EMOTIONS` (Disciplined, Confident, Neutral, Anxious, FOMO, Greedy), `INITIAL_TRADES` (9 seed trades, ids `trade_1`-`trade_9`).
+- **Role:** the only place with domain rules: default taxonomy, tag seeding, overview assembly.
+- **Key symbols:** `JournalService`, `DEFAULT_STRATEGIES` (Breakout, Pullback Support, Gap Fill, Trend Continuation, Mean Reversion), `DEFAULT_EMOTIONS` (Disciplined, Confident, Neutral, Anxious, FOMO, Greedy). There are **no trade constants**: `INITIAL_TRADES` was deleted in v1.6.
 - **Constructor takes the three *interfaces*** (`ITradeRepository`, `IStrategyRepository`, `IEmotionRepository`) - the only genuine dependency-inversion point in the app.
-- **`seed_if_empty()`** seeds each table independently, only when empty. It is called from `get_journal_overview()`, i.e. **seeding is a side effect of the first `GET /api/journal`**, not of startup.
+- **`seed_default_tags()`** seeds only the strategy/emotion library, only when empty, and **never trades**. It is called from `get_journal_overview()`, i.e. seeding is a side effect of the first `GET /api/journal`, not of startup.
 - **`get_journal_overview()`** returns `{"trades", "strategies", "emotions"}`; everything else (`add_trade`, `update_trade`, `delete_trade`, `add_strategy`, ...) is a one-line pass-through to a repository.
-- **`reset_to_mock()`** = reset all three tables to the constants above (each reset is one transaction, so a reader never sees an empty journal).
 - **Extension point:** any new cross-entity rule (e.g. "block deleting a strategy that has open positions") belongs here, not in an endpoint.
 
 ### M6 — Pydantic Models · `app/models/`
@@ -156,13 +155,13 @@ Each module owns its own dependency factory that *instantiates* a repository fro
 ### M11 — Static SPA · `static/`
 | File | Role / key facts |
 | --- | --- |
-| `index.html` | Shell only (~636 lines): sign-in gate (`#auth-gate` > `#auth-form` with email + password, `hidden` until `auth.js` decides), 5 views (`dashboard`, `tradelog`, `strategies`, `emotions`, `analytics`), 2 modals (add/edit trade, trade detail), toast container, mistake pills, sidebar account row + watchlist add form. Sets `window.FASTAPI_BACKEND_URL` before loading modules (empty on `localhost`/`127.0.0.1`/`[::1]`, the Render host otherwise); no keys live in the HTML any more. Assets are version-tagged `?v=2.12` |
+| `index.html` | Shell only (~700 lines): sign-in gate (`#auth-gate` > `#auth-form` with email + password, `hidden` until `auth.js` decides), 5 views (`dashboard`, `tradelog`, `strategies`, `emotions`, `analytics`), 3 modals (add/edit trade, trade detail, walkthrough), toast container, mistake pills, sidebar account row + "Walkthrough & Help" button + watchlist add form. Money labels are ₹. Sets `window.FASTAPI_BACKEND_URL` before loading modules (empty on `localhost`/`127.0.0.1`/`[::1]`, the Render host otherwise); no keys live in the HTML any more. Assets are version-tagged `?v=2.15` |
 | `auth.js` | Supabase gate: reads `window.SUPABASE_URL`/`SUPABASE_ANON_KEY` if present, else `GET /auth/config`; dynamically imports `@supabase/supabase-js` from jsDelivr, `createClient({persistSession, autoRefreshToken, detectSessionInUrl:false})`, `onAuthStateChange` (reveal the app, reload once a rejected session is dropped), sign-in / sign-up toggle, `friendlyError()`, `getAuthToken()` (refreshes inside a 30 s window), `clearLocalJournalKeys()`, `handleUnauthorized()`, `signOut()`, `currentUserEmail()`, `authMode()`. A `provider: "none"` config = dev mode: the gate is skipped and no `Authorization` header is sent |
 | `api.js` | `getBaseUrl()` + `apiFetch(path, options)`: awaits `authReady`, adds `Authorization: Bearer <token>`, defaults `Content-Type: application/json` for bodies, and on `401` calls `handleUnauthorized()` (sign-out) then throws. **Every** server call goes through it |
-| `state.js` | `StateManager` singleton `stateManager`: `loadState()` (GET `/api/journal`, then localStorage keys `stock_journal_trades|strategies|emotions`, then `initialTrades`), CRUD with **optimistic local mutation + fire-and-forget `apiFetch`**, `exportData()/importData()` (POST `/api/journal/import`), `resetToMock()` (POST `/api/journal/reset`), `clearAll()`, and the analytics engine `getMetrics(currentPrices)` |
-| `app.js` | ~1240 lines of DOM/render + event wiring: `escapeHtml`, `showToast`, `initCharts` (Chart.js: `equityChart`, `allocationChart`), `renderDashboardView/renderTradeLogView/renderStrategiesView/renderEmotionsView/renderAnalyticsView`, `renderWatchlist`/`loadWatchlist`/`saveWatchlist`/`addWatchlistKey`/`removeWatchlistKey`/`updateCustomWatchPrices`, `updateAllViews()`, modal open/close, `startMarketTickerSubscription()`, and every listener inside one `DOMContentLoaded` block |
-| `mockApi.js` | `MockMarketFeed` singleton `marketFeed`: exports `SYMBOL_TO_TOKEN` (`AAPL→NSE_EQ|INE062A01020`, `MSFT→…INE160A01022`, `TSLA→…INE467I01027`, `NVDA→…INE009A01021`, `AMZN→…INE075A01022`, `BTC` = SBIN key × 90), polls `GET /api/prices` every 2500 ms through `apiFetch`, keeps `prices` (demo symbols) and `keyPrices` (raw instrument keys), diffs prices, notifies subscribers (`subscribe()` returns an unsubscribe fn). `setExtraKeys(keys)` adds the account watchlist to the poll |
-| `mockData.js` | `initialTrades` — the 9 demo trades, mirrored by `INITIAL_TRADES` in `journal_service.py` |
+| `state.js` | `StateManager` singleton `stateManager`: `loadState()` (GET `/api/journal`, then localStorage keys `stock_journal_trades|strategies|emotions`, then `[]` - no bundled sample trades), CRUD with **optimistic local mutation + `apiFetch` sync**, `pushOrFail()` (a non-2xx response throws and fires `sj:sync-error`), `getSymbolKeys()` (symbol → `instrumentKey` for the feed), `exportData()/importData()` (POST `/api/journal/import`), and the analytics engine `getMetrics(currentPrices)` |
+| `app.js` | ~1280 lines of DOM/render + event wiring: `escapeHtml`, `showToast`, `formatCurrency`/`formatCompactCurrency` (INR), `initCharts` (Chart.js: `equityChart`, `allocationChart`), `renderDashboardView/renderTradeLogView/renderStrategiesView/renderEmotionsView/renderAnalyticsView`, `renderWatchlist`/`loadWatchlist`/`saveWatchlist`/`addWatchlistKey`/`removeWatchlistKey`/`updateWatchPrices`, empty-state CTAs, `updateAllViews()`, modal open/close, `mountTour()` plus the `sj:tour-action` / `sj:sync-error` listeners, and every listener inside one `DOMContentLoaded` block |
+| `marketFeed.js` | `MarketFeed` singleton `marketFeed`: polls `GET /api/prices` every 2500 ms through `apiFetch` for the **union of watchlist keys and position keys** (`setSymbolKeys`), keeps `keyPrices` + per-key status, skips `meta.as_of === null` so the 100.0 placeholder is never painted, stays idle when there are no keys, and notifies subscribers (`subscribe()` returns an unsubscribe fn) |
+| `onboarding.js` | `mountTour()` - the 6-step walkthrough behind "Walkthrough & Help": Next/Back/Skip, progress dots, Esc/arrow keys, and two `sj:tour-action` buttons (watchlist, record-trade). Opened only by the Help button; no first-run flag, no storage |
 | `styles.css` | ~1520 lines: CSS custom properties (`--text-muted`, `--color-danger`, `--border-radius-md`, …), utility classes (`text-up`, `text-down`, `badge`, `pill-option`, `td-mono`), the auth gate, and three responsive breakpoints (1100px / 880px / 520px) plus `@media (hover: none)` |
 
 - **`getMetrics()` is the analytics core:** replay trades chronologically, maintain per-symbol average cost (sign-flip = close), accumulate realized P&L and an `equityCurve`, then derive `winRate`, `profitFactor`, `avgWin`, `avgLoss`, `activePositions`, and `strategyAnalysis` / `emotionAnalysis` (count, wins, net P&L, avg `pfMatrix`/`rsMatrix`/`xPercentage`).
@@ -180,12 +179,12 @@ Each module owns its own dependency factory that *instantiates* a repository fro
 | `test_subscriptions.py` | `diff_subscriptions` both directions + merge, registry union, TTL expiry, `drop_user` | sync |
 | `test_repositories.py` | Memory-repo CRUD, case-insensitive duplicate rejection, cascading delete → `Uncategorized` / `Neutral`, clear-on-explicit-null, absent-field untouched, owner isolation | `@pytest.mark.asyncio` (auto mode) |
 | `test_api_endpoints.py` | All REST routes through the `api` fixture (memory repos override the factories) | sync TestClient |
-| `test_auth.py` | `/health` public, `/auth/config` in both modes, `401` for missing/garbage/expired/wrong-issuer/wrong-audience tokens (RSA keypair + monkeypatched JWKS), HS256 via the legacy secret, dev bypass accepted locally and refused in production, startup guard, cross-tenant `404`s, per-owner duplicate names, per-owner reset & import isolation, trade cap, `429`, watchlist defaults/round-trip/invalid keys/registry publication | sync TestClient |
-| `test_postgres.py` | Real Postgres (a session-scoped `pgserver`, or `TEST_DATABASE_URL`): RLS enabled with zero policies, insert order + generated ids, owner isolation, jsonb merge / explicit-null clear / empty patch, id clash gets a fresh id, transactional reset, case-insensitive duplicates, strategy and emotion cascades, watchlist upsert, one-time seeding, unreachable DSN | `@pytest.mark.asyncio` (auto mode) |
+| `test_auth.py` | `/health` public, `/auth/config` in both modes, `401` for missing/garbage/expired/wrong-issuer/wrong-audience tokens (RSA keypair + monkeypatched JWKS), HS256 via the legacy secret, dev bypass accepted locally and refused in production, startup guard, cross-tenant `404`s, per-owner duplicate names, per-owner import isolation, trade cap, `429`, empty watchlist + round-trip/invalid keys/registry publication | sync TestClient |
+| `test_postgres.py` | Real Postgres (a session-scoped `pgserver`, or `TEST_DATABASE_URL`): RLS enabled with zero policies, insert order + generated ids, owner isolation, jsonb merge / explicit-null clear / empty patch, id clash gets a fresh id, transactional reset, case-insensitive duplicates, strategy and emotion cascades, watchlist upsert, tags-only seeding (no trades), unreachable DSN | `@pytest.mark.asyncio` (auto mode) |
 
 - **`pytest.ini` sets `asyncio_mode = auto`**, so `@pytest.mark.asyncio` is optional; `import main` (therefore `asyncpg`) is still required for the API test modules, and `test_postgres.py` downloads nothing - it boots the bundled PostgreSQL 16 binary from the `pgserver` package into `.pgtest/`.
 - **Never covered:** the live Supabase project (Auth service, JWKS endpoint, pooler), the real Upstox socket, and all browser behaviour.
-- Empirical state in this workspace: **78 tests pass** (`python -m pytest -q`), 14 of them against a real Postgres.
+- Empirical state in this workspace: **91 tests pass** (`python -m pytest -q`), 14 of them against a real Postgres.
 
 ### M13 — Build / Deploy Config
 - `requirements.txt` - unpinned, **production only**: `fastapi`, `uvicorn`, `upstox-python-sdk`, `python-dotenv`, `websocket-client`, `asyncpg`, `PyJWT[crypto]`, `pytest`, `pytest-asyncio`, `httpx` (`motor`/`pymongo` are gone). `requirements-dev.txt` adds `pgserver` on top for the Postgres tests - it is kept out of the deploy because Render's default Python outran the package's wheels.
@@ -197,21 +196,20 @@ Each module owns its own dependency factory that *instantiates* a repository fro
 ## 3. Cross-Module Flows
 
 **A. First page load / overview read**
-`auth.js initAuth()` → `GET /auth/config` → supabase-js client + `onAuthStateChange` (or a dev-mode pass-through when the API answers `provider: "none"`) → `authReady` resolves → `app.js` boots → `state.js loadState()` → `apiFetch('/api/journal')` (adds the bearer token) → `get_journal_service` builds 3 owner-scoped Postgres repos → `JournalService.get_journal_overview()` → `seed_if_empty(owner_id)` (may write defaults **for that account only**) → 3 × `SELECT ... WHERE owner_id = $1` → envelope → `onLoad` callback → `app.js updateAllViews()` + `loadWatchlist()` → `getMetrics(currentPrices)`.
+`auth.js initAuth()` → `GET /auth/config` → supabase-js client + `onAuthStateChange` (or a dev-mode pass-through when the API answers `provider: "none"`) → `authReady` resolves → `app.js` boots → `state.js loadState()` → `apiFetch('/api/journal')` (adds the bearer token) → `get_journal_service` builds 3 owner-scoped Postgres repos → `JournalService.get_journal_overview()` → `seed_default_tags(owner_id)` (may write the taxonomy **for that account only**, never a trade) → 3 × `SELECT ... WHERE owner_id = $1` → envelope → `onLoad` callback → `app.js updateAllViews()` + `loadWatchlist()` → `getMetrics(currentPrices)`.
 
 **B. Trade CRUD (dual path)**
-`app.js` form → `stateManager.addTrade/editTrade/deleteTrade` → local mutation + `localStorage` → `POST /api/trades` | `PUT /api/trades/{id}` | `DELETE /api/trades/{id}` → `PostgresTradeRepository` (direct, service layer skipped). `/api/journal/reset` and `/api/journal/import` reach the same tables through `JournalService`.
+`app.js` form → `stateManager.addTrade/editTrade/deleteTrade` → local mutation + `localStorage` → `POST /api/trades` | `PUT /api/trades/{id}` | `DELETE /api/trades/{id}` → `PostgresTradeRepository` (direct, service layer skipped). `/api/journal/import` reaches the same tables through `JournalService`.
 
 **C. Live price path**
-Upstox WS (or Mock) → `on_tick_received` → `price_cache.set_price` → `GET /api/prices?tokens=…` (polled every 2.5 s by `marketFeed`) → `MockMarketFeed.prices` → subscriber in `app.js` → `currentPrices` → ticker DOM + `getMetrics(currentPrices)` → unrealized P&L and equity re-render.
+Upstox WS (or Mock) → `on_tick_received` → `price_cache.set_price` → `GET /api/prices?tokens=…` (polled every 2.5 s by `marketFeed`) → `MarketFeed.keyPrices` (keyed by instrument key) → subscriber in `app.js` → `currentPrices` (resolved through `getSymbolKeys()`) → ticker DOM + `getMetrics(currentPrices)` → unrealized P&L and equity re-render.
 
-**D. Reset / import / clear**
-Reset: `stateManager.resetToMock()` sets `initialTrades` locally then `POST /api/journal/reset` → `reset_to_mock()` wipes + reseeds all three tables (one transaction each).
-Import: `state.js importData()` parses JSON → `POST /api/journal/import` → endpoint calls `reset_trades` / `reset_strategies` / `reset_emotions` with **unvalidated** dicts.
-Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the current strategies/emotions.
+**D. Import / clear**
+There is no reset-to-demo path any more (v1.6): `stateManager` has no `resetToMock()`/`clearAll()`.
+Import: `state.js importData()` parses JSON → `POST /api/journal/import` → endpoint calls `reset_trades` / `reset_strategies` / `reset_emotions` with **unvalidated** dicts. An empty import payload is how a user wipes their own journal.
 
 **E. Watchlist → streamer subscription**
-`GET /api/watchlist` (boot / after each journal load) → `PostgresWatchlistRepository.get_keys()` (falls back to `settings.get_tokens()`) → `subscriptions.set_user_keys(userId, keys)` → registry `snapshot()` inside the daemon's sync thread → `diff_subscriptions(subscribed, wanted)` → `streamer.update_subscriptions(wanted)` (or a forced reconnect when it returns `False`) → ticks land in `price_cache` → the SPA's next `GET /api/prices` poll includes those keys → `marketFeed.keyPrices` → `updateCustomWatchPrices()` repaints the row. `PUT /api/watchlist` follows the same path after persisting.
+`GET /api/watchlist` (boot / after each journal load) → `PostgresWatchlistRepository.get_keys()` (empty until the user adds keys) → `subscriptions.set_user_keys(userId, keys)` → registry `snapshot()` inside the daemon's sync thread → `diff_subscriptions(subscribed, wanted)` → `streamer.update_subscriptions(wanted)` (or a forced reconnect when it returns `False`) → ticks land in `price_cache` → the SPA's next `GET /api/prices` poll includes those keys → `marketFeed.keyPrices` → `updateWatchPrices()` repaints the row. `PUT /api/watchlist` follows the same path after persisting.
 
 ---
 
@@ -225,7 +223,7 @@ Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the cur
 - Booleans returned by repositories mean "did it happen" (`add_*`/`delete_*`), and endpoints convert `False` into 400/404.
 - Repository methods speak `dict`/`list[str]`; Pydantic models are an API-boundary concern only.
 - **`owner_id` is never a SQL parameter of convenience:** it comes from the constructor and is always `$1`. A new query without `WHERE owner_id = $1` is a tenancy bug.
-- Module-level constants hold seeds and taxonomy (`DEFAULT_*`, `INITIAL_TRADES`) — extend those, don't scatter literals.
+- Module-level constants hold the taxonomy (`DEFAULT_*`) — extend those, don't scatter literals. Trades are never seeded.
 - SQL lives in `app/repositories/postgres/` only. Values are bind parameters; the sole interpolations are table/column names taken from validated constants.
 - Logging via `logging.getLogger("<area>")` (`server`, `database`, `journal-service`, `streamer.mock`, `streamer.upstox`) with f-string messages.
 - Module/section banners are `# ====` comments; docstrings appear on endpoint functions and interface methods only.
@@ -244,11 +242,11 @@ Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the cur
 
 | Goal | Touch |
 | --- | --- |
-| New trade field | `app/models/trade.py` (`TradeCreate`, `TradeUpdate`) → `static/app.js` form + table + detail modal → `static/state.js` (`addTrade` normalisation, `getMetrics` if analytical) → seed data in `INITIAL_TRADES` and `static/mockData.js`. No migration: fields live in the `trades.data` jsonb document |
+| New trade field | `app/models/trade.py` (`TradeCreate`, `TradeUpdate`, `TradeResponse`) → `static/app.js` form + table + detail modal → `static/state.js` (`addTrade`/`editTrade` normalisation, `getMetrics` if analytical). There is no seed data to update. No migration: fields live in the `trades.data` jsonb document |
 | New REST resource | endpoint module in `app/api/endpoints/` (`APIRouter(dependencies=[Depends(get_current_user)])`) + `include_router(...)` in `app/api/router.py` + interface in `repositories/interfaces/` + `postgres/` & `memory/` implementations (owner in the constructor) + `schema.py` DDL if it needs a table + service method + tests |
 | Swap Postgres for another store | implement the four M7 interfaces, then change the `get_*_repo` / `get_journal_service` factories (the only place concretions are named) |
 | New market-data provider | implement `IMarketDataStreamer` in `app/streaming/` (+ `update_subscriptions`/`is_connected`), add the branch in `build_streamer()` |
-| Change the default watchlist basket | `TOKENS` env/default in `app/core/config.py` and the matching seed prices in `mock_streamer.py`; per-account instruments need no code change (`PUT /api/watchlist`) |
+| Change the mock streamer basket | `TOKENS` env/default in `app/core/config.py` and the matching seed prices in `mock_streamer.py`. This is a streamer-only basket, not a user watchlist; per-account instruments need no code change (`PUT /api/watchlist` or a trade's `instrumentKey`) |
 | New dashboard view | `index.html` `.page-view` + `.nav-item[data-view]` → `app.js` renderer + `updateAllViews()` + `pageTitle` switch |
 | New default taxonomy entry | `DEFAULT_STRATEGIES` / `DEFAULT_EMOTIONS` in `journal_service.py` **and** the fallback arrays in `static/state.js` |
 
@@ -263,9 +261,9 @@ Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the cur
 5. **Rate limits and caps are process-local** — a restart refills the sliding-window budget, and a second Render instance would enforce its own; moving them to Postgres/Redis is the upgrade path.
 6. **`PriceCache` staleness is flagged, not enforced** — `meta.stale` reports dead feeds, but the UI does not yet render a stale indicator and values are never dropped.
 7. **Analytics exist only in the browser** — no server-side metrics endpoint, so any non-SPA client must re-implement `getMetrics()` (fairly intricate average-cost replay).
-8. **Duplicated seed data** (`INITIAL_TRADES` in Python vs `initialTrades` in JS) and **duplicated default taxonomy** (three places).
+8. **Duplicated default taxonomy** (Python constants vs the fallback arrays in `static/state.js`). The duplicated seed *trades* are gone (v1.6).
 9. **Streamer is process-local** — multi-instance or serverless deployment silently breaks live prices; the "LIVE FEED ACTIVE" badge is static markup, but `GET /health` now exposes the truth (`streamer.connected`, `prices_fresh`).
-10. **The demo tickers still map US symbols onto NSE instrument keys** (BTC scaled ×90) — cosmetic, but it means the dashboard watchlist and the Upstox feed disagree about what "AAPL" is. Real symbols go through the per-account watchlist.
+10. **`/api/prices` still answers `100.0` for a key that never ticked** — the browser skips it (`meta.as_of === null`) and the mock streamer no longer invents it, but any other client must check `meta` or it will read a fake price as real.
 11. **Unpinned `requirements.txt`** — no lockfile, so `upstox-python-sdk`/`asyncpg` behaviours can drift.
 12. **Sign-in is email + password only** — no magic link, no OAuth provider, no password-recovery flow. Supabase's **Confirm email** switch must stay off, or a new account cannot sign in until it follows the emailed link (see `production_deployment_guide.md`).
 13. **The schema is created by the app, not by migrations** — `ensure_schema()` is idempotent DDL executed at boot. A destructive change needs a hand-written statement, and there is no migration history; adding a column to a jsonb document needs nothing at all.
@@ -277,9 +275,9 @@ Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the cur
 ## 7. Glossary
 
 - **PF Matrix / RS Matrix / X Percentage** — user-entered journal metrics (profit factor, relative strength, risk allocation %) averaged per strategy/emotion in analytics.
-- **Instrument key** — Upstox identifier of the form `NSE_EQ|<ISIN>` (e.g. `NSE_EQ|INE062A01020` = SBIN); replaces the old numeric Angel One tokens everywhere (`TOKENS`, `price_cache` keys, frontend map). Upstox already delivers rupees, no paise conversion needed.
+- **Instrument key** — Upstox identifier of the form `NSE_EQ|<ISIN>` (e.g. `NSE_EQ|INE062A01020` = SBIN); replaces the old numeric Angel One tokens everywhere (`TOKENS`, `price_cache` keys). A trade may carry one in `instrumentKey` so a position gets a live quote. Upstox already delivers rupees, no paise conversion needed.
 - **custom_id** — dropped from storage; the `trades.id` text column now holds the public id, so an imported `trade_1` keeps its name and only a clash is re-minted as a uuid.
-- **Seeding** — writing `DEFAULT_*` + `INITIAL_TRADES` when a table is empty.
+- **Seeding** — writing the default taxonomy (`DEFAULT_*`) when an account's tag tables are empty. Trades are never seeded.
 - **Mock mode** — `MOCK_STREAMER=true` or missing credentials; synthetic ticks replace the broker feed.
 - **`owner_id`** — the tenancy key: the Supabase `sub` claim (a UUID, or `DEV_USER_ID` in bypass mode). Stamped on insert, filtered on every read, never accepted from a client.
 - **Access token** — the short-lived Supabase token the browser attaches as a bearer header; verified locally against the cached JWKS (or the legacy HS256 secret), never stored by this app. supabase-js refreshes it in the background.
@@ -291,7 +289,7 @@ Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the cur
 
 ```powershell
 pip install -r requirements-dev.txt                  # app deps + pgserver for the Postgres tests
-python -m pytest -q                                  # full suite: 78 tests
+python -m pytest -q                                  # full suite: 91 tests
 python -m pytest tests/test_postgres.py -q           # real Postgres only (pgserver, no network)
 python -m pytest tests/test_auth.py -q               # auth + tenancy contract only
 python -m pytest tests/test_models.py -q             # pure validation, no infra

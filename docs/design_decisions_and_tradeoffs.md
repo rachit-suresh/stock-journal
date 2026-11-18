@@ -348,8 +348,8 @@ Preserves historical trade log entries, metrics, entry prices, and financial los
 The application design adheres to **SOLID design principles**:
 
 1. **Single Responsibility Principle (SRP):**  
-   - `MongoTradeRepository`: Responsible exclusively for MongoDB trade collection queries.  
-   - `JournalService`: Responsible solely for business orchestration and initial database seeding.  
+   - `PostgresTradeRepository`: Responsible exclusively for the owner-scoped `trades` table queries.  
+   - `JournalService`: Responsible solely for business orchestration and default-taxonomy seeding (never trades).  
    - `PriceCache`: Responsible strictly for thread-safe in-memory tick storage.  
    - `UpstoxMarketStreamer`: Handles the WebSocket connection, subscription, and feed decoding only.
 2. **Open/Closed Principle (OCP) & Strategy Pattern:**  
@@ -441,7 +441,7 @@ Clerk cost three releases of integration work (domain/TLS dead end in §11, a v6
 
 ### 12.3 Data migration
 
-None. The Atlas data was generated demo data (GAP-11 context), and every account re-seeds lazily on its first `GET /api/journal` (SPEC-SVC-3). Clerk user ids and Supabase user ids are unrelated, so carrying data over would have needed a manual mapping anyway.
+None. The Atlas data was generated demo data (GAP-11 context), and every account starts with an empty journal plus the default tags on its first `GET /api/journal` (SPEC-SVC-3; the demo trades themselves were removed in v1.6). Clerk user ids and Supabase user ids are unrelated, so carrying data over would have needed a manual mapping anyway.
 
 ### 12.4 Consequences
 

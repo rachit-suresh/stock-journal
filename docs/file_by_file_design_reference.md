@@ -16,7 +16,7 @@ stock-journal/
 │   │   │   ├── __init__.py         # Endpoints package marker
 │   │   │   ├── auth_config.py      # Public GET /auth/config (Supabase URL + anon key for the SPA)
 │   │   │   ├── emotions.py         # Dedicated REST endpoints for emotions CRUD
-│   │   │   ├── journal.py          # Master journal overview, reset, & import fallback router
+│   │   │   ├── journal.py          # Master journal overview & bulk-import router (no reset route)
 │   │   │   ├── prices.py           # Real-time price cache query router (with success: True contract)
 │   │   │   ├── strategies.py       # Dedicated REST endpoints for strategies CRUD
 │   │   │   └── trades.py           # Dedicated REST endpoints for trades CRUD
@@ -55,7 +55,7 @@ stock-journal/
 │   │       └── watchlist_repository.py # One row per owner (text[] keys)
 │   ├── services/
 │   │   ├── __init__.py             # Services package marker
-│   │   └── journal_service.py      # Business logic orchestrator & DB auto-seeding
+│   │   └── journal_service.py      # Business logic orchestrator & tag-only seeding
 │   └── streaming/
 │       ├── __init__.py             # Streaming package marker
 │       ├── upstox_streamer.py      # Upstox market data feed v3 WebSocket ticker engine
@@ -68,12 +68,12 @@ stock-journal/
 │   ├── file_by_file_design_reference.md  # Detailed reference manual (This document)
 │   └── production_deployment_guide.md   # Deployment guide for Render, Vercel & Supabase
 ├── static/
-│   ├── app.js                      # DOM Event handlers, Chart.js renderings, & View management
+│   ├── app.js                      # DOM Event handlers, Chart.js renderings, INR formatting, & View management
 │   ├── api.js                      # Single fetch entry point: base URL + bearer token + 401 handling
 │   ├── auth.js                     # Supabase Auth gate (email + password), session and token access
-│   ├── index.html                  # HTML5 semantic dashboard markup + sign-in gate
-│   ├── mockApi.js                  # Frontend market price polling engine
-│   ├── mockData.js                 # Initial seed trade data fixtures
+│   ├── index.html                  # HTML5 semantic dashboard markup + sign-in gate + walkthrough modal
+│   ├── marketFeed.js               # Instrument-key driven price polling engine (watchlist + positions)
+│   ├── onboarding.js               # 6-step walkthrough behind the "Walkthrough & Help" button
 │   ├── state.js                    # Client StateManager & portfolio metrics calculator (RESTful calls)
 │   └── styles.css                  # Custom CSS styling with dark glassmorphism design system
 ├── tests/
@@ -227,18 +227,18 @@ Holds the process-wide asyncpg pool.
 
 - **`PriceCache`**: Thread-safe memory cache keyed by instrument key. `set_price(token, price)` stores `(ltp, timestamp)` under `threading.Lock()`; `get_batch_prices(tokens)` returns the last known LTP (default `100.0` for unknown keys); `get_batch_meta(tokens)` returns `as_of`/`stale` per key against `PRICE_MAX_AGE_SECONDS`.
 - **`UpstoxMarketStreamer`**: Wraps `upstox_client.MarketDataStreamerV3`; subscribes `TOKENS` in `"ltpc"` mode on open, decodes `{"type": "live_feed", "feeds": {...}}` messages, ignores `market_info`, and writes LTPs to `PriceCache`. The SDK import is lazy so mock mode runs without it.
-- **`MockMarketStreamer`**: Simulates real-time price movements using a random-walk algorithm ($\pm 0.4\%$) seeded for the five default instrument keys (`SBIN` 650, `PNB` 80, `TCS` 3500, `INFY` 1500, `WIPRO` 450).
+- **`MockMarketStreamer`**: Simulates real-time price movements using a random-walk algorithm ($\pm 0.4\%$) for the five default instrument keys (`SBIN` 650, `PNB` 80, `TCS` 3500, `INFY` 1500, `WIPRO` 450). A key it does not recognise gets no tick at all, so an unquoted instrument renders `—` exactly as in live mode instead of an invented `100.0`.
 
 ---
 
 ## 6. Service & API Layer (`app/services/` & `app/api/`)
 
-- **`JournalService`**: Coordinates business logic and executes initial seed data loading if the caller's collections are empty on first `GET /api/journal` (seeding is a side effect of the first read, never of startup).
+- **`JournalService`**: Coordinates business logic and seeds **only the default strategy/emotion taxonomy** when the caller's tag tables are empty on first `GET /api/journal` (seeding is a side effect of the first read, never of startup). It never creates trades, and there is no reset-to-demo method any more.
 - **`app/api/endpoints/prices.py`**: Returns the cached price dictionary as `{"success": True, "data": {instrument_key: ltp}, "meta": {instrument_key: {as_of, stale}}, "timestamp": ...}`.
 - **`app/api/endpoints/trades.py`**: Dedicated RESTful handlers (`GET /api/trades`, `POST /api/trades`, `GET /api/trades/{id}`, `PUT /api/trades/{id}`, `DELETE /api/trades/{id}`).
 - **`app/api/endpoints/strategies.py`**: Dedicated RESTful handlers (`GET /api/strategies`, `POST /api/strategies`, `DELETE /api/strategies/{name}`).
 - **`app/api/endpoints/emotions.py`**: Dedicated RESTful handlers (`GET /api/emotions`, `POST /api/emotions`, `DELETE /api/emotions/{name}`).
-- **`app/api/endpoints/journal.py`**: Overview, bulk reset, and bulk import endpoints. Legacy query-param compat routes were removed (GAP-3b); `/api/journal` exposes `GET` only.
+- **`app/api/endpoints/journal.py`**: Overview (`GET`) and bulk import (`POST`) endpoints. Legacy query-param compat routes were removed (GAP-3b) and `POST /journal/reset` was deleted in v1.6, so a live journal cannot be restored to sample data.
 - **`app/models/responses.py`**: Pydantic response envelopes (`DataResponse[T]`, `MessageResponse`, `PricesResponse`, `JournalResponse`) wired as `response_model` on every route (GAP-8b).
 - **`app/api/endpoints/auth_config.py`**: Public `GET /auth/config` → `{"provider": "supabase", "url", "anonKey"}`, or `{"provider": "none"}` while `AUTH_DISABLED` is on. This is what lets the SPA change environments with no code edit.
 - **`app/api/endpoints/health.py`**: Public `GET /health` → status, `env`, `auth`, `database`, `streamer`, `prices_fresh`.
@@ -251,9 +251,10 @@ Holds the process-wide asyncpg pool.
 
 - **`static/auth.js`**: Supabase Auth gate. Reads `window.SUPABASE_URL`/`window.SUPABASE_ANON_KEY` or falls back to `GET /auth/config`, dynamically imports supabase-js v2 from jsDelivr, then renders an email + password form (with a "Create an account" toggle). Exports `authReady`, `authMode`, `authSuspended`, `getAuthToken` (refreshes a token inside 30 s of expiry), `clearLocalJournalKeys`, `handleUnauthorized`, `signOut`, `currentUserEmail`; a `401` from the API signs out with `scope: 'local'` and returns to the gate.
 - **`static/api.js`**: `apiFetch(path, options)` - the only place a request is made: waits for `authReady`, attaches the bearer token, short-circuits while `authSuspended()`, and routes `401`s through `handleUnauthorized`.
-- **`static/state.js`**: `StateManager` class handling local state, metric calculations, and asynchronous RESTful API synchronization with backend (`/api/trades`, `/api/strategies`, `/api/emotions`). Free of undefined `notifyTabs()` ghost calls.
-- **`static/app.js`**: DOM UI event listeners, view switcher (`dashboard`, `tradelog`, `strategies`), form submission handlers, and Chart.js equity/allocation chart rendering engine.
-- **`static/mockApi.js`**: Background tick polling engine fetching `/api/prices` every 2.5s and notifying UI listeners.
+- **`static/state.js`**: `StateManager` class handling local state, metric calculations, and asynchronous RESTful API synchronization with backend (`/api/trades`, `/api/strategies`, `/api/emotions`). It starts from `[]` (no bundled sample trades), exposes `getSymbolKeys()` so positions can be quoted, and turns any non-2xx write into a visible `sj:sync-error` toast.
+- **`static/app.js`**: DOM UI event listeners, view switcher (`dashboard`, `tradelog`, `strategies`), form submission handlers, INR money/chart formatting, empty states with a next action, the Help-button walkthrough wiring, and Chart.js equity/allocation chart rendering engine.
+- **`static/marketFeed.js`**: Background tick polling engine fetching `/api/prices` every 2.5s for the account's own instrument keys (watchlist ∪ position keys). Skips `meta.as_of === null` so the `100.0` placeholder is never painted, stays idle with no keys, and notifies UI listeners.
+- **`static/onboarding.js`**: `mountTour()` renders the 6-step walkthrough (add stocks → record a trade → tag psychology → review → feed badge) with Next/Back/Skip, progress dots and two action buttons. Opened only by the sidebar "Walkthrough & Help" button - no first-run auto-open, no seen flag, no storage.
 
 ---
 
@@ -262,5 +263,5 @@ Holds the process-wide asyncpg pool.
 - **`tests/test_models.py`**: Validates Pydantic schema validation rules.
 - **`tests/test_price_cache.py`**: Tests thread-safety under multi-threaded concurrent write workloads.
 - **`tests/test_repositories.py`**: Tests CRUD operations and cascading trade updates upon category deletion (in-memory doubles).
-- **`tests/test_postgres.py`**: The same contracts against a real PostgreSQL (started with the `pgserver` package, or `TEST_DATABASE_URL`): jsonb merge + null-clear, id preservation and clash handling, transactional reset isolation, `ON CONFLICT` de-duplication, cascade updates, watchlist upsert, RLS enabled with zero policies, and a lazy-seeding pass through `JournalService`.
+- **`tests/test_postgres.py`**: The same contracts against a real PostgreSQL (started with the `pgserver` package, or `TEST_DATABASE_URL`): jsonb merge + null-clear, id preservation and clash handling, transactional reset isolation, `ON CONFLICT` de-duplication, cascade updates, watchlist upsert, RLS enabled with zero policies, and a `JournalService` pass that seeds tags but never trades.
 - **`tests/test_api_endpoints.py`**: Integration tests across all FastAPI HTTP endpoints using `TestClient`. Run via `python -m pytest -v`.
