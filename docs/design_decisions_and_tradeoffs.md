@@ -360,11 +360,12 @@ The application design adheres to **SOLID design principles**:
 | Architectural Decision | Alternative Considered | Accepted Trade-off | Key Advantage Gained |
 | :--- | :--- | :--- | :--- |
 | **FastAPI Monolith** | Microservices Architecture | Single container RAM ceiling | Zero inter-service network latency, 1-click cloud deployment. |
-| **Async Motor Driver** | Sync PyMongo Driver | Requires `async/await` syntax throughout repository classes | Non-blocking event loop execution under high request concurrency. |
+| **Async `asyncpg` pool** (was Motor until v1.5) | Sync `psycopg` / an ORM | Hand-written SQL in four repository classes | Non-blocking event loop execution under high request concurrency, no ORM layer. |
 | **Repository Pattern (DIP)** | Direct MongoDB queries in routes | Extra interface classes & abstract methods | Total database engine independence (MongoDB, SQL, Redis interchangeable). |
 | **Thread-Safe `PriceCache`** | External Redis Cache | Prices exist in RAM (reset on process restart) | Microsecond read speeds without cloud cache costs or network hops. |
 | **Pydantic v2 Models** | Plain Python Dicts | Minor CPU initialization overhead | Rust-accelerated type validation & automatic OpenAPI schema docs. |
-| **Clerk Development instance** (`*.clerk.accounts.dev` issuer) | Clerk Production instance on `*.vercel.app` | Development-tier limits and a dev badge; no custom domain | Works on Vercel and `localhost` today with a valid wildcard certificate (see §11). |
+| ~~**Clerk Development instance**~~ (superseded by §12) | Clerk Production instance on `*.vercel.app` | Development-tier limits and a dev badge; no custom domain | Worked on Vercel and `localhost` with a valid wildcard certificate (see §11). |
+| **Supabase Auth + Postgres** (v1.5) | Clerk + MongoDB Atlas | One vendor for identity and data; trades kept as `jsonb` rather than typed columns | Email + password with no SDK bundles or domain setup, transactional resets/cascades, every deployment value in Render env (see §12). |
 
 ---
 
@@ -403,9 +404,47 @@ Consequences:
 
 Revisit trigger: a custom domain is purchased, or Clerk changes development-instance limits.
 
+> **Superseded 2026-11-18 by §12.** Clerk is no longer used; this section is kept as the record of why the production instance could not work on `*.vercel.app`.
+
 ---
 
-## 12. Technical Glossary
+## 12. Supabase Migration (Auth + Postgres, SPEC v1.5)
+
+### 12.1 Why
+
+Clerk cost three releases of integration work (domain/TLS dead end in §11, a v6 two-bundle loader, a sign-in reload loop) and still showed a development badge. The operator asked to move **both** identity and data to Supabase, with the constraint that the live Render + Vercel deployments change by **environment variables only**, and with plain email + password sign-in (no mail-driven flows).
+
+### 12.2 Decisions
+
+| Concern | Decision | Rejected alternative | Why |
+| :--- | :--- | :--- | :--- |
+| Data access path | Backend keeps owning every query (`asyncpg` from FastAPI); the browser never queries Supabase tables | supabase-js talking to tables directly under RLS policies | Keeps the repository seam, caps, rate limits, cascades and the 404-not-403 tenancy rule exactly where they are; no logic moves to SQL policies. |
+| Table exposure | RLS **enabled with no policies** on every table | Leaving RLS off | Supabase publishes `public` over PostgREST; the anon key is public, so RLS-off would let anyone read every journal. The backend's owner role bypasses RLS. |
+| Trade storage | `trades(owner_id, id, seq, data jsonb)` | One typed column per field | Import is intentionally unvalidated until GAP-2 is decided; `jsonb` keeps imported dicts verbatim, and `data \|\| patch` reproduces the null-clears update rule (GAP-1b) in one statement. |
+| Strategies / emotions | Typed rows + unique `(owner_id, lower(name))`, `ON CONFLICT DO NOTHING` | Pre-check read before insert (the Mongo way) | The index is the single source of truth; races cannot produce a `500`. |
+| Atomicity | Resets and delete-with-cascade in one transaction | Mongo's `delete_many` + `insert_many` | Postgres gives it for free; readers never see an empty journal mid-reset (SPEC-PER-6 tightened). |
+| `owner_id` | `text`, no FK to `auth.users` | `uuid references auth.users` | Dev bypass (`dev-local`) and tests use non-UUID subjects; account deletion is not a feature. |
+| Connection string | Session pooler URI, `statement_cache_size=0` | Direct `db.<ref>.supabase.co` | The direct host is IPv6-only and Render has no IPv6 egress; disabling the statement cache also keeps transaction-mode pooling safe. |
+| Schema management | Idempotent `CREATE … IF NOT EXISTS` at startup (`app/core/schema.py`) | Supabase CLI migrations | Four tables, no ALTERs yet; zero manual SQL for the operator. Revisit at the first column change. |
+| Token verification | JWKS (`RS256`/`ES256`) + optional legacy `HS256` secret, `aud=authenticated` | Calling `GET /auth/v1/user` per request | Stateless and local after the first JWKS fetch; works for both new asymmetric-key projects and legacy-secret projects. |
+| Frontend config | Public `GET /auth/config` serves `SUPABASE_URL` + anon key from Render env | Hard-coding them in `index.html` | Honors "env vars only"; a project switch needs no Vercel redeploy. |
+| Sign-in methods | Email + password only, "Confirm email" off | Magic link / OTP / Google | Requested by the operator; no SMTP, no OAuth app, no redirect URLs to maintain. Trade-off: no self-service password reset — the operator resets passwords from the Supabase dashboard. |
+
+### 12.3 Data migration
+
+None. The Atlas data was generated demo data (GAP-11 context), and every account re-seeds lazily on its first `GET /api/journal` (SPEC-SVC-3). Clerk user ids and Supabase user ids are unrelated, so carrying data over would have needed a manual mapping anyway.
+
+### 12.4 Consequences
+
+- Removed: `motor`, `pymongo`, `app/repositories/mongo/`, `app/core/indexes.py`, `CLERK_ISSUER`, `MONGO_URI`, `MONGO_DB_NAME`, `window.CLERK_PUBLISHABLE_KEY`.
+- Added: `asyncpg`, `app/repositories/postgres/`, `app/core/schema.py`, `GET /auth/config`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, optional `SUPABASE_JWT_SECRET`.
+- Free-tier note: Supabase pauses a free project after a week without activity; the first request after a pause fails until the project is resumed from the dashboard.
+
+Revisit trigger: GAP-2 is decided (typed trade columns become possible), or a self-service password reset is wanted (needs SMTP or Supabase's built-in mailer limits).
+
+---
+
+## 13. Technical Glossary
 
 * **LTP (Last Traded Price):** The execution price of the most recent transaction on the exchange matching engine.
 * **SWR (Stale-While-Revalidate):** An HTTP cache invalidation strategy defined in RFC 5861 that returns cached data immediately while asynchronously revalidating in the background.
