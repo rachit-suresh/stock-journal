@@ -81,6 +81,7 @@ const btnHelp = document.getElementById('btn-help');
 
 // Metric Elements
 const metricEquity = document.getElementById('metric-equity');
+const metricEquitySub = document.getElementById('metric-equity-sub');
 const metricRealizedPnL = document.getElementById('metric-realized-pnl');
 const metricUnrealizedPnL = document.getElementById('metric-unrealized-pnl');
 const metricUnrealizedSub = document.getElementById('metric-unrealized-sub');
@@ -134,7 +135,7 @@ function initCharts(equityData = [], allocationData = []) {
   purpleGradient.addColorStop(1, 'rgba(139, 92, 246, 0.0)');
 
   const chartLabels = equityData.map(d => d.date);
-  const chartBalances = equityData.map(d => d.balance);
+  const chartPnL = equityData.map(d => d.pnl);
 
   if (equityChart) equityChart.destroy();
   equityChart = new Chart(equityCtx, {
@@ -142,8 +143,8 @@ function initCharts(equityData = [], allocationData = []) {
     data: {
       labels: chartLabels,
       datasets: [{
-        label: 'Account Equity (₹)',
-        data: chartBalances,
+        label: 'Cumulative realized P&L (₹)',
+        data: chartPnL,
         borderColor: '#8b5cf6',
         borderWidth: 3,
         backgroundColor: purpleGradient,
@@ -407,7 +408,12 @@ function updateWatchPrices() {
 
 // Render Dashboard View
 function renderDashboardView(metrics) {
-  metricEquity.textContent = formatCurrency(metrics.accountEquity);
+  // The journal has no starting capital (SPEC-FE-5): this card is what the
+  // open book is worth right now, so it reads ₹0.00 until a position exists.
+  metricEquity.textContent = formatCurrency(metrics.portfolioValue);
+  metricEquitySub.textContent = metrics.unpricedValueCount > 0
+    ? `Includes ${metrics.unpricedValueCount} position${metrics.unpricedValueCount === 1 ? '' : 's'} at cost (no live quote)`
+    : 'Market value of open positions';
   
   metricRealizedPnL.textContent = formatCurrency(metrics.totalRealizedPnL);
   metricRealizedPnL.className = `metric-val ${metrics.totalRealizedPnL > 0 ? 'text-up' : metrics.totalRealizedPnL < 0 ? 'text-down' : ''}`;

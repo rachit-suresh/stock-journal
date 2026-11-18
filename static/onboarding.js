@@ -50,7 +50,7 @@ const STEPS = [
     title: 'Step 4 — Review and learn',
     text: 'Once trades exist, the other views start telling you something.',
     bullets: [
-      'Dashboard: net equity, realized and unrealized P&L, open positions.',
+      'Dashboard: portfolio value, realized and unrealized P&L, open positions.',
       'Trade Log: search and filter every entry; click a row for the full detail.',
       'Analytics: win rate and net profit per strategy and per emotion.',
       'Export Journal keeps a JSON backup; Import Journal restores one.'

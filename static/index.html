@@ -15,7 +15,7 @@
       (LOCAL_HOSTS.includes(window.location.hostname) ? "" : "https://stock-journal-xenm.onrender.com");
   </script>
   <!-- Google Fonts & Stylesheets -->
-  <link rel="stylesheet" href="styles.css?v=2.15">
+  <link rel="stylesheet" href="styles.css?v=2.16">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -163,11 +163,11 @@
           <div class="metrics-grid">
             
             <div class="card metric-card">
-              <span class="card-title">Net Equity</span>
+              <span class="card-title">Portfolio Value</span>
               <div>
-                <div class="metric-val" id="metric-equity">₹1,00,000.00</div>
-                <div class="metric-sub">
-                  Total account valuation
+                <div class="metric-val" id="metric-equity">₹0.00</div>
+                <div class="metric-sub" id="metric-equity-sub">
+                  Market value of open positions
                 </div>
               </div>
             </div>
@@ -207,7 +207,7 @@
           <!-- Charts Section -->
           <div class="charts-grid">
             <div class="card chart-card-wrapper">
-              <span class="card-title">Equity Growth (Cumulative P&L)</span>
+              <span class="card-title">Cumulative Realized P&L</span>
               <div class="chart-container">
                 <canvas id="equityChart"></canvas>
               </div>
@@ -667,6 +667,6 @@
   </div>
 
   <!-- Main Application Orchestrator Script -->
-  <script type="module" src="app.js?v=2.15"></script>
+  <script type="module" src="app.js?v=2.16"></script>
 </body>
 </html>

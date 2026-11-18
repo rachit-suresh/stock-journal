@@ -28,7 +28,9 @@ class StateManager {
     this.trades = [];
     this.strategies = [];
     this.emotions = [];
-    this.startingBalance = 100000;
+    // No starting capital: the journal never invents cash you did not deposit
+    // (SPEC-FE-5), so every valuation starts at ₹0.00 and only reflects
+    // positions you actually record.
     this.onLoadCallback = null;
     this.loadState();
   }
@@ -321,8 +323,7 @@ class StateManager {
   // --- IMPORT / EXPORT ---
   exportData() {
     return JSON.stringify({
-      version: "1.2",
-      startingBalance: this.startingBalance,
+      version: "1.3",
       strategies: this.strategies,
       emotions: this.emotions,
       trades: this.trades
@@ -334,9 +335,8 @@ class StateManager {
       const data = JSON.parse(jsonString);
       if (data && Array.isArray(data.trades)) {
         this.trades = data.trades;
-        if (data.startingBalance) {
-          this.startingBalance = parseFloat(data.startingBalance);
-        }
+        // Exports up to format 1.2 carried a `startingBalance`; it is ignored
+        // now that there is no invented capital to apply it to.
         if (Array.isArray(data.strategies)) {
           this.strategies = data.strategies;
         }
@@ -380,10 +380,11 @@ class StateManager {
 
     const positions = {};
     let runningRealizedPnL = 0;
+    // Cumulative *realized* P&L, starting at zero: with no invented starting
+    // capital this series is a P&L, not an account balance (SPEC-FE-5).
     const equityCurve = [{
       date: 'Start',
-      balance: this.startingBalance,
-      realizedPnL: 0
+      pnl: 0
     }];
 
     const closedTradePnLs = [];
@@ -498,12 +499,16 @@ class StateManager {
 
       equityCurve.push({
         date: new Date(trade.date).toLocaleDateString(),
-        balance: this.startingBalance + runningRealizedPnL,
-        realizedPnL: runningRealizedPnL
+        pnl: runningRealizedPnL
       });
     });
 
     let totalUnrealizedPnL = 0;
+    // What the open book is worth right now: shares x price. A position with
+    // no quote holds its cost basis and is counted, so the card can say so
+    // instead of silently treating cost as market value.
+    let totalPortfolioValue = 0;
+    let unpricedValueCount = 0;
     const activePositions = [];
 
     Object.keys(positions).forEach(symbol => {
@@ -524,6 +529,8 @@ class StateManager {
         }
 
         totalUnrealizedPnL += unrealizedPnL;
+        if (!priced) unpricedValueCount += 1;
+        totalPortfolioValue += Math.abs(pos.shares) * curPrice;
         activePositions.push({
           symbol,
           shares: pos.shares,
@@ -569,11 +576,10 @@ class StateManager {
     const avgLoss = lossCount > 0 ? grossLoss / lossCount : 0;
 
     const totalRealizedPnL = runningRealizedPnL;
-    const accountEquity = this.startingBalance + totalRealizedPnL + totalUnrealizedPnL;
 
     return {
-      startingBalance: this.startingBalance,
-      accountEquity,
+      portfolioValue: totalPortfolioValue,
+      unpricedValueCount,
       totalRealizedPnL,
       totalUnrealizedPnL,
       netPnL: totalRealizedPnL + totalUnrealizedPnL,
