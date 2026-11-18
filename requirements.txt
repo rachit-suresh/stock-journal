@@ -3,9 +3,10 @@ uvicorn
 upstox-python-sdk
 python-dotenv
 websocket-client
-motor
-pymongo
+asyncpg
 PyJWT[crypto]>=2.8
 pytest
 pytest-asyncio
 httpx
+# Boots a throwaway PostgreSQL 16 for tests/test_postgres.py (no server needed)
+pgserver

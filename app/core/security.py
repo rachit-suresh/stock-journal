@@ -1,9 +1,11 @@
-"""Clerk session verification for the FastAPI monolith.
+"""Supabase session verification for the FastAPI monolith.
 
-The browser signs in with Clerk and sends its short-lived JWT as a bearer
-token. This module verifies that token statically against Clerk's published
-JWKS: no server-side session, no shared secret, no Clerk SDK on the server
-(SPEC-AUTH-2/3). The verified `sub` claim is the tenancy key everywhere else.
+The browser signs in with Supabase Auth and sends its short-lived access
+token as a bearer token. This module verifies that token statically: against
+the project's published JWKS for asymmetric signing keys, or against the
+legacy shared secret when a project still signs HS256 (SPEC-AUTH-2/3). No
+server-side session and no Supabase SDK on the server. The verified `sub`
+claim is the tenancy key everywhere else.
 """
 
 import logging
@@ -18,9 +20,12 @@ from app.core.config import settings
 
 logger = logging.getLogger("security")
 
-# Clerk signs RS256 today; ES256/HS256 are accepted so a project-level
-# algorithm change does not take the API down.
-ALLOWED_ALGORITHMS = ["RS256", "ES256", "HS256"]
+# Supabase asymmetric signing keys are ES256 (default) or RS256.
+ASYMMETRIC_ALGORITHMS = ["RS256", "ES256"]
+# Legacy projects sign with a shared secret; accepted only when it is set.
+LEGACY_ALGORITHM = "HS256"
+# Every signed-in user's access token carries this audience.
+SUPABASE_AUDIENCE = "authenticated"
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 _jwks_client = None
@@ -52,31 +57,50 @@ def _get_jwks_client():
             if _jwks_client is None:
                 from jwt import PyJWKClient
 
-                issuer = settings.CLERK_ISSUER.rstrip("/")
                 _jwks_client = PyJWKClient(
-                    f"{issuer}/.well-known/jwks.json",
+                    f"{settings.supabase_issuer()}/.well-known/jwks.json",
                     cache_keys=True,
                     lifespan=3600,
                 )
     return _jwks_client
 
 
+def _verification_key(token: str):
+    """Pick the key and the single algorithm family the token may use.
+
+    The algorithm list is derived from the configured key type, never from
+    the token alone, so an HS256 token can never be checked against a public
+    JWKS key (algorithm confusion).
+    """
+    import jwt
+
+    algorithm = jwt.get_unverified_header(token).get("alg")
+    if algorithm == LEGACY_ALGORITHM:
+        if not settings.SUPABASE_JWT_SECRET:
+            raise ValueError("HS256 token but SUPABASE_JWT_SECRET is not set")
+        return settings.SUPABASE_JWT_SECRET, [LEGACY_ALGORITHM]
+    if algorithm in ASYMMETRIC_ALGORITHMS:
+        return _get_jwks_client().get_signing_key_from_jwt(token).key, ASYMMETRIC_ALGORITHMS
+    raise ValueError(f"unsupported signing algorithm {algorithm!r}")
+
+
 def verify_session_token(token: str) -> dict:
-    """Return the decoded claims of a Clerk session token or raise 401."""
-    if not settings.CLERK_ISSUER:
-        logger.error("CLERK_ISSUER is not set; every bearer token is rejected.")
+    """Return the decoded claims of a Supabase access token or raise 401."""
+    if not settings.SUPABASE_URL:
+        logger.error("SUPABASE_URL is not set; every bearer token is rejected.")
         raise _unauthorized("Authentication is not configured on the server.")
 
     try:
         import jwt
 
-        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+        key, algorithms = _verification_key(token)
         return jwt.decode(
             token,
-            signing_key.key,
-            algorithms=ALLOWED_ALGORITHMS,
-            issuer=settings.CLERK_ISSUER,
-            options={"require": ["exp", "iss", "sub"]},
+            key,
+            algorithms=algorithms,
+            issuer=settings.supabase_issuer(),
+            audience=SUPABASE_AUDIENCE,
+            options={"require": ["exp", "iss", "sub", "aud"]},
         )
     except Exception as exc:
         logger.info("Rejected bearer token: %s", exc)
@@ -88,8 +112,8 @@ async def get_current_user(
 ) -> UserContext:
     """FastAPI dependency resolving the caller, or failing closed with 401.
 
-    `AUTH_DISABLED` exists so local development does not need a Clerk project.
-    It is refused outright when ENV=production (SPEC-AUTH-5).
+    `AUTH_DISABLED` exists so local development does not need a Supabase
+    project. It is refused outright when ENV=production (SPEC-AUTH-5).
     """
     if settings.AUTH_DISABLED:
         if settings.is_production():

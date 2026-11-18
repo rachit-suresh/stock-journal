@@ -27,7 +27,14 @@ class Settings:
 
     # Authentication (SPEC-AUTH). ENV=production refuses AUTH_DISABLED.
     ENV: str = os.getenv("ENV", "development")
-    CLERK_ISSUER: str = os.getenv("CLERK_ISSUER", "")
+    # Supabase project URL, e.g. https://<ref>.supabase.co (no trailing path).
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    # Public anon / publishable key, served to the browser by GET /auth/config.
+    SUPABASE_ANON_KEY: str = os.getenv(
+        "SUPABASE_ANON_KEY", os.getenv("SUPABASE_PUBLISHABLE_KEY", "")
+    ).strip()
+    # Only for projects still signing tokens with the legacy shared secret.
+    SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "").strip()
     AUTH_DISABLED: bool = os.getenv("AUTH_DISABLED", "false").lower() == "true"
     DEV_USER_ID: str = os.getenv("DEV_USER_ID", "dev-local")
 
@@ -47,9 +54,8 @@ class Settings:
     # CORS & Security Config
     ALLOWED_ORIGINS_STR: str = os.getenv("ALLOWED_ORIGINS", "*")
 
-    # MongoDB Config
-    MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-    MONGO_DB_NAME: str = os.getenv("MONGO_DB_NAME", "stock_journal")
+    # Postgres (Supabase session pooler URI in production, SPEC-CFG-2)
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "").strip()
 
     def get_allowed_origins(self) -> list[str]:
         if not self.ALLOWED_ORIGINS_STR or self.ALLOWED_ORIGINS_STR.strip() == "*":
@@ -67,22 +73,30 @@ class Settings:
     def is_production(self) -> bool:
         return self.ENV.strip().lower() == "production"
 
+    def supabase_issuer(self) -> str:
+        """The `iss` claim Supabase Auth stamps on access tokens."""
+        return f"{self.SUPABASE_URL}/auth/v1" if self.SUPABASE_URL else ""
+
     def auth_mode(self) -> str:
-        """`clerk` when tokens are verified, `dev-bypass` for AUTH_DISABLED."""
-        return "dev-bypass" if self.AUTH_DISABLED else "clerk"
+        """`supabase` when tokens are verified, `dev-bypass` for AUTH_DISABLED."""
+        return "dev-bypass" if self.AUTH_DISABLED else "supabase"
 
     def validate_auth_config(self) -> None:
         """Fail fast on configurations that are insecure or unusable."""
         if self.AUTH_DISABLED and self.is_production():
             raise RuntimeError(
                 "AUTH_DISABLED=true is refused when ENV=production. "
-                "Set CLERK_ISSUER and unset AUTH_DISABLED before deploying."
+                "Set SUPABASE_URL and unset AUTH_DISABLED before deploying."
             )
-        if not self.AUTH_DISABLED and not self.CLERK_ISSUER:
+        if not self.AUTH_DISABLED and not self.SUPABASE_URL:
             # Fail closed rather than open: requests stay 401 until it is set.
             logger.error(
-                "CLERK_ISSUER is not set and AUTH_DISABLED is false. "
+                "SUPABASE_URL is not set and AUTH_DISABLED is false. "
                 "Every /api request will be rejected with 401."
+            )
+        if not self.AUTH_DISABLED and not self.SUPABASE_ANON_KEY:
+            logger.error(
+                "SUPABASE_ANON_KEY is not set: the sign-in page cannot reach Supabase."
             )
 
 settings = Settings()

@@ -6,7 +6,7 @@ Two cheap, single-process protections:
 
 Both live in memory on purpose: Render runs a single service instance, and a
 restart simply refills the budget. Moving to multiple instances means moving
-these counters to Mongo or Redis.
+these counters to Postgres or Redis.
 """
 
 import threading

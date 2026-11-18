@@ -8,10 +8,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.core.database import connect_to_mongo, close_mongo_connection, get_database
-from app.core.indexes import ensure_indexes
+from app.core.database import connect_to_database, close_database_connection
 from app.api.router import api_router
-from app.api.endpoints import health
+from app.api.endpoints import auth_config, health
 from app.streaming.status import mark as mark_streamer_status
 from app.streaming.subscriptions import subscriptions
 from app.streaming.upstox_streamer import UpstoxMarketStreamer
@@ -92,11 +91,10 @@ async def lifespan(app: FastAPI):
     if settings.auth_mode() == "dev-bypass":
         logger.warning("AUTH_DISABLED is on: every request is treated as %s.", settings.DEV_USER_ID)
 
-    await connect_to_mongo()
-    await ensure_indexes(get_database())
+    await connect_to_database()
     start_streamer_daemon()
     yield
-    await close_mongo_connection()
+    await close_database_connection()
 
 
 app = FastAPI(
@@ -115,8 +113,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Public liveness probe, then the authenticated API surface.
+# Public probes (liveness, sign-in config), then the authenticated API surface.
 app.include_router(health.router)
+app.include_router(auth_config.router)
 app.include_router(api_router)
 
 # Serve static frontend UI assets

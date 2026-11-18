@@ -1,25 +1,25 @@
+import asyncpg
 from fastapi import APIRouter, Request, Depends, HTTPException
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.config import settings
-from app.core.database import get_database
+from app.core.database import get_pool
 from app.core.limits import mutation_rate_limit
 from app.core.security import UserContext, get_current_user
 from app.models.responses import JournalResponse, MessageResponse
-from app.repositories.mongo.trade_repository import MongoTradeRepository
-from app.repositories.mongo.strategy_repository import MongoStrategyRepository
-from app.repositories.mongo.emotion_repository import MongoEmotionRepository
+from app.repositories.postgres.trade_repository import PostgresTradeRepository
+from app.repositories.postgres.strategy_repository import PostgresStrategyRepository
+from app.repositories.postgres.emotion_repository import PostgresEmotionRepository
 from app.services.journal_service import JournalService
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 def get_journal_service(
-    db: AsyncIOMotorDatabase = Depends(get_database),
+    pool: asyncpg.Pool = Depends(get_pool),
     user: UserContext = Depends(get_current_user),
 ) -> JournalService:
     """All three repositories are pinned to the caller's owner_id."""
-    trade_repo = MongoTradeRepository(db, user.user_id)
-    strategy_repo = MongoStrategyRepository(db, user.user_id)
-    emotion_repo = MongoEmotionRepository(db, user.user_id)
+    trade_repo = PostgresTradeRepository(pool, user.user_id)
+    strategy_repo = PostgresStrategyRepository(pool, user.user_id)
+    emotion_repo = PostgresEmotionRepository(pool, user.user_id)
     return JournalService(trade_repo, strategy_repo, emotion_repo)
 
 @router.get("/journal", response_model=JournalResponse)

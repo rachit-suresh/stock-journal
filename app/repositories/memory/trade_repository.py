@@ -2,7 +2,7 @@ from typing import List, Optional
 from app.repositories.interfaces.trade_repository import ITradeRepository
 
 class MemoryTradeRepository(ITradeRepository):
-    """In-memory trade store used by tests; mirrors the Mongo contract."""
+    """In-memory trade store used by tests; mirrors the Postgres contract."""
 
     def __init__(self, owner_id: str, initial_trades: Optional[List[dict]] = None):
         if not owner_id:
@@ -32,7 +32,7 @@ class MemoryTradeRepository(ITradeRepository):
     async def update_trade(self, trade_id: str, trade_update: dict) -> Optional[dict]:
         for idx, t in enumerate(self.trades):
             if t.get("id") == trade_id or t.get("custom_id") == trade_id:
-                # Mirrors MongoTradeRepository: absent keys are unchanged,
+                # Mirrors PostgresTradeRepository: absent keys are unchanged,
                 # explicit None clears the field.
                 patch = {k: v for k, v in trade_update.items() if k not in ("id", "custom_id", "_id", "owner_id")}
                 updated = {**t, **patch}
