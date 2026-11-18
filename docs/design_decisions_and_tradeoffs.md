@@ -453,7 +453,33 @@ Revisit trigger: GAP-2 is decided (typed trade columns become possible), or a se
 
 ---
 
-## 13. Technical Glossary
+## 13. Frontend Valuation Model: No Invented Capital (v1.7)
+
+### 13.1 Finding
+
+The dashboard's first card was computed as `startingBalance (100000) + realized + unrealized`, and the same constant seeded the first point of the "Cumulative P&L" chart. A brand-new account therefore displayed ₹1,00,000 of capital nobody had deposited, and the chart's own label contradicted its axis (₹95K–₹1.1L around a base that was never real). The operator asked why it did not start at zero. A constant cannot be "the user's capital", so the metric had to be redefined rather than retuned.
+
+### 13.2 Decision
+
+There is no starting capital. The first card is **Portfolio Value** = Σ |shares| × current price (a position without a quote is held at its cost basis and counted in the caption); it reads ₹0.00 when flat. The chart is **Cumulative Realized P&L** and starts at ₹0. `startingBalance` is deleted from the state, the export payload (format `1.3`) and the curve; exports from `1.2` still import, with that field ignored. Recorded as SPEC-FE-4/FE-5 and AUDIT A-042.
+
+### 13.3 Rejected alternatives
+
+- **Make the constant configurable** (a "starting capital" setting). It still invents a deposit the app never observes, and needs a per-account field the server does not have.
+- **Net Equity = realized + unrealized.** Zero-based and honest, but it is exactly the sum of the two cards beside it and the last point of the chart.
+- **Track cash properly** (deposits, withdrawals, settlement). Correct in a brokerage sense, and the prerequisite for a true account-equity number, but it is a product change (a cash ledger), not a metric fix.
+
+### 13.4 Consequences
+
+- Every rupee on the dashboard now traces either to a recorded trade or to a live quote; nothing is assumed at zero-state.
+- The chart's axis matches its label, and the two "cannot be known" cases are stated instead of hidden: an unpriced position reads `—` (A-041) and the caption names how many were valued at cost.
+- The first card answers "what is my open book worth", **not** "what is my account worth". If account value is wanted later, cash tracking is the prerequisite.
+
+Revisit trigger: the operator wants account-level equity, or position sizing as a percentage of capital.
+
+---
+
+## 14. Technical Glossary
 
 * **LTP (Last Traded Price):** The execution price of the most recent transaction on the exchange matching engine.
 * **SWR (Stale-While-Revalidate):** An HTTP cache invalidation strategy defined in RFC 5861 that returns cached data immediately while asynchronously revalidating in the background.

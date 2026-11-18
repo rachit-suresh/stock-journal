@@ -11,7 +11,7 @@ Use it as the entry point before changing code; use the documents in [§9](#9-re
 
 | Dimension | Fact |
 | --- | --- |
-| What it is | Multi-user trading journal + portfolio dashboard: log trades with strategy / mindset tags, see P&L, equity curve, and per-strategy / per-emotion performance |
+| What it is | Multi-user trading journal + portfolio dashboard: log trades with strategy / mindset tags, see P&L, a cumulative P&L curve, and per-strategy / per-emotion performance |
 | Shape | Single FastAPI process that (a) serves a REST API under `/api`, (b) serves the static SPA from `/`, (c) runs a market-data streamer on a daemon thread |
 | Identity | Supabase Auth (email + password, configured on the Supabase side). The SPA signs in through supabase-js and sends `Authorization: Bearer <access token>`; the API verifies it statelessly against the project JWKS (or the legacy HS256 secret) |
 | Tenancy | Every row carries `owner_id` (= Supabase `sub`, a UUID). Repositories are constructed per request with that owner and filter every read/write; foreign ids answer `404` |
@@ -155,7 +155,7 @@ Each module owns its own dependency factory that *instantiates* a repository fro
 ### M11 — Static SPA · `static/`
 | File | Role / key facts |
 | --- | --- |
-| `index.html` | Shell only (~700 lines): sign-in gate (`#auth-gate` > `#auth-form` with email + password, `hidden` until `auth.js` decides), 5 views (`dashboard`, `tradelog`, `strategies`, `emotions`, `analytics`), 3 modals (add/edit trade, trade detail, walkthrough), toast container, mistake pills, sidebar account row + "Walkthrough & Help" button + watchlist add form. Money labels are ₹. Sets `window.FASTAPI_BACKEND_URL` before loading modules (empty on `localhost`/`127.0.0.1`/`[::1]`, the Render host otherwise); no keys live in the HTML any more. Assets are version-tagged `?v=2.15` |
+| `index.html` | Shell only (~700 lines): sign-in gate (`#auth-gate` > `#auth-form` with email + password, `hidden` until `auth.js` decides), 5 views (`dashboard`, `tradelog`, `strategies`, `emotions`, `analytics`), 3 modals (add/edit trade, trade detail, walkthrough), toast container, mistake pills, sidebar account row + "Walkthrough & Help" button + watchlist add form. Money labels are ₹. Sets `window.FASTAPI_BACKEND_URL` before loading modules (empty on `localhost`/`127.0.0.1`/`[::1]`, the Render host otherwise); no keys live in the HTML any more. Assets are version-tagged `?v=2.16` |
 | `auth.js` | Supabase gate: reads `window.SUPABASE_URL`/`SUPABASE_ANON_KEY` if present, else `GET /auth/config`; dynamically imports `@supabase/supabase-js` from jsDelivr, `createClient({persistSession, autoRefreshToken, detectSessionInUrl:false})`, `onAuthStateChange` (reveal the app, reload once a rejected session is dropped), sign-in / sign-up toggle, `friendlyError()`, `getAuthToken()` (refreshes inside a 30 s window), `clearLocalJournalKeys()`, `handleUnauthorized()`, `signOut()`, `currentUserEmail()`, `authMode()`. A `provider: "none"` config = dev mode: the gate is skipped and no `Authorization` header is sent |
 | `api.js` | `getBaseUrl()` + `apiFetch(path, options)`: awaits `authReady`, adds `Authorization: Bearer <token>`, defaults `Content-Type: application/json` for bodies, and on `401` calls `handleUnauthorized()` (sign-out) then throws. **Every** server call goes through it |
 | `state.js` | `StateManager` singleton `stateManager`: `loadState()` (GET `/api/journal`, then localStorage keys `stock_journal_trades|strategies|emotions`, then `[]` - no bundled sample trades), CRUD with **optimistic local mutation + `apiFetch` sync**, `pushOrFail()` (a non-2xx response throws and fires `sj:sync-error`), `getSymbolKeys()` (symbol → `instrumentKey` for the feed), `exportData()/importData()` (POST `/api/journal/import`), and the analytics engine `getMetrics(currentPrices)` |
@@ -164,8 +164,8 @@ Each module owns its own dependency factory that *instantiates* a repository fro
 | `onboarding.js` | `mountTour()` - the 6-step walkthrough behind "Walkthrough & Help": Next/Back/Skip, progress dots, Esc/arrow keys, and two `sj:tour-action` buttons (watchlist, record-trade). Opened only by the Help button; no first-run flag, no storage |
 | `styles.css` | ~1520 lines: CSS custom properties (`--text-muted`, `--color-danger`, `--border-radius-md`, …), utility classes (`text-up`, `text-down`, `badge`, `pill-option`, `td-mono`), the auth gate, and three responsive breakpoints (1100px / 880px / 520px) plus `@media (hover: none)` |
 
-- **`getMetrics()` is the analytics core:** replay trades chronologically, maintain per-symbol average cost (sign-flip = close), accumulate realized P&L and an `equityCurve`, then derive `winRate`, `profitFactor`, `avgWin`, `avgLoss`, `activePositions`, and `strategyAnalysis` / `emotionAnalysis` (count, wins, net P&L, avg `pfMatrix`/`rsMatrix`/`xPercentage`).
-- **`startingBalance` = 100000** lives only in `state.js` (exported, but **not** persisted to localStorage nor stored server-side).
+- **`getMetrics()` is the analytics core:** replay trades chronologically, maintain per-symbol average cost (sign-flip = close), accumulate realized P&L and a cumulative realized-P&L `equityCurve` (starting at ₹0), then derive `portfolioValue`, `winRate`, `profitFactor`, `avgWin`, `avgLoss`, `activePositions`, and `strategyAnalysis` / `emotionAnalysis` (count, wins, net P&L, avg `pfMatrix`/`rsMatrix`/`xPercentage`).
+- **No starting capital:** `startingBalance = 100000` was removed in v1.7 (A-042). The first dashboard card is **Portfolio Value** = Σ |shares| × price, holding an unpriced position at cost and naming it in the caption (`Includes N position(s) at cost`); the chart card is **Cumulative Realized P&L**. Export format is `1.3` (no `startingBalance`), and files from `1.2` still import.
 - **Render contract:** templates are built with `innerHTML` string concatenation and user-supplied text is meant to pass through `escapeHtml` (applied in the majority of interpolations, but `innerHTML` is assigned ~38 times against ~18 `escapeHtml` calls — treat escaping as required for any new interpolation). Prices flash `price-up`/`price-down` for 800 ms.
 - **Gotcha:** `addTrade`/`editTrade` push a temporary id (`trade_temp_<ts>_<rand>`) and later swap in the server id — anything keyed on ids must tolerate that swap. `editTrade` converts emptied numeric inputs to explicit `null`, which the repositories now honour as a clear (GAP-1b).
 
@@ -262,13 +262,17 @@ Import: `state.js importData()` parses JSON → `POST /api/journal/import` → e
 6. **`PriceCache` staleness is flagged, not enforced** — `meta.stale` reports dead feeds, but the UI does not yet render a stale indicator and values are never dropped.
 7. **Analytics exist only in the browser** — no server-side metrics endpoint, so any non-SPA client must re-implement `getMetrics()` (fairly intricate average-cost replay).
 8. **Duplicated default taxonomy** (Python constants vs the fallback arrays in `static/state.js`). The duplicated seed *trades* are gone (v1.6).
-9. **Streamer is process-local** — multi-instance or serverless deployment silently breaks live prices; the "LIVE FEED ACTIVE" badge is static markup, but `GET /health` now exposes the truth (`streamer.connected`, `prices_fresh`).
+9. **Streamer is process-local** — multi-instance or serverless deployment silently breaks live prices. The header badge follows `meta` (`LIVE FEED ACTIVE` / `NO LIVE TICKS - LAST Nm AGO` / `FEED OFFLINE`, A-036) and `GET /health` exposes `streamer.connected` / `prices_fresh`; neither knows about exchange hours, so a snapshot tick after the close still reads `LIVE` for its freshness window (GAP-14).
 10. **`/api/prices` still answers `100.0` for a key that never ticked** — the browser skips it (`meta.as_of === null`) and the mock streamer no longer invents it, but any other client must check `meta` or it will read a fake price as real.
-11. **Unpinned `requirements.txt`** — no lockfile, so `upstox-python-sdk`/`asyncpg` behaviours can drift.
-12. **Sign-in is email + password only** — no magic link, no OAuth provider, no password-recovery flow. Supabase's **Confirm email** switch must stay off, or a new account cannot sign in until it follows the emailed link (see `production_deployment_guide.md`).
-13. **The schema is created by the app, not by migrations** — `ensure_schema()` is idempotent DDL executed at boot. A destructive change needs a hand-written statement, and there is no migration history; adding a column to a jsonb document needs nothing at all.
-14. **RLS is enabled with no policies** — deliberate (the backend is the only client), but it means the tables are invisible to anon/PostgREST; exposing them to the browser later needs policies, not just disabling RLS.
-15. **`/auth/config` lives outside `/api`** — any new public router needs its own `vercel.json` rewrite, or the static site 404s on it while the Render host works fine.
+11. **A watchlist row can only be friendly if a trade links the key** — otherwise it renders the ISIN tail (`INE062A01020`), because no instrument master is loaded (GAP-12, seen in the 2026-11-18 walkthrough).
+12. **Analytics only count closed round-trips** — an account with open positions reads `Profit Factor 1.00`, `Avg Win ₹0.00` and "No strategy history yet", with nothing saying open positions are excluded (GAP-13).
+13. **Accounts created before v1.6 still hold the seeded demo rows** — the seeder is gone, but `trade_1`…`trade_9` already written to Postgres are not deleted by a deploy (GAP-15).
+14. **The ≤880px shell puts chrome before data** — brand, nav strip, account email, a full-width Sign out and three full-width actions stack above the cards (GAP-16).
+15. **Unpinned `requirements.txt`** — no lockfile, so `upstox-python-sdk`/`asyncpg` behaviours can drift.
+16. **Sign-in is email + password only** — no magic link, no OAuth provider, no password-recovery flow. Supabase's **Confirm email** switch must stay off, or a new account cannot sign in until it follows the emailed link (see `production_deployment_guide.md`).
+17. **The schema is created by the app, not by migrations** — `ensure_schema()` is idempotent DDL executed at boot. A destructive change needs a hand-written statement, and there is no migration history; adding a column to a jsonb document needs nothing at all.
+18. **RLS is enabled with no policies** — deliberate (the backend is the only client), but it means the tables are invisible to anon/PostgREST; exposing them to the browser later needs policies, not just disabling RLS.
+19. **`/auth/config` lives outside `/api`** — any new public router needs its own `vercel.json` rewrite, or the static site 404s on it while the Render host works fine.
 
 ---
 
@@ -296,6 +300,19 @@ python -m pytest tests/test_models.py -q             # pure validation, no infra
 
 $env:AUTH_DISABLED="true"; $env:DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"; python main.py
 ```
+
+**Browser verification without touching Supabase** (how the v1.6/v1.7 UI was checked):
+
+```powershell
+# 1. throwaway Postgres, prints its own DSN
+python -c "import pgserver,time; s=pgserver.get_server('.pgdev', cleanup_mode='stop'); print(s.get_uri()); time.sleep(3600)"
+# 2. API + UI with auth bypassed and the mock feed
+$env:AUTH_DISABLED="true"; $env:MOCK_STREAMER="true"; $env:DATABASE_URL="<the printed DSN>"; python -m uvicorn main:app --port 8041
+```
+
+- **Cache trap that produced a false bug report once:** only `app.js?v=` and `styles.css?v=` are versioned; the modules they import are bare specifiers. A browser that already loaded the app keeps running the old `state.js`/`app.js`, so bump both tags in `index.html` and hard-reload before believing a screenshot.
+- **Cleanup:** stop uvicorn, then call `pgserver.get_server('.pgdev').cleanup()`; a surviving `postgres.exe` can still hold `.pgdev/log`, so stop that process before deleting the directory.
+- **Mock prices are synthetic** (`MOCK_STREAMER=true`, five simulated keys) - useful for exercising P&L, never for quoting real values.
 
 `http://localhost:8000/` serves the SPA (with `AUTH_DISABLED=true` the gate hides itself and no token is sent), `http://localhost:8000/docs` the auto-generated OpenAPI UI, and `http://localhost:8000/health` the streamer/auth/database snapshot. Local dev needs *some* Postgres behind `DATABASE_URL` - without it every data route answers `503` while `/health` and the SPA still load.
 
