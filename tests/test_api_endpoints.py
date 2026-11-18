@@ -73,16 +73,41 @@ def test_trades_api_crud(api):
     assert res_delete.status_code == 200
     assert api.get(f"/api/trades/{trade_id}").status_code == 404
 
-def test_journal_overview_and_reset(api):
+def test_journal_overview_starts_empty(api):
     res = api.get("/api/journal")
     assert res.status_code == 200
-    assert "trades" in res.json()["data"]
-    assert "strategies" in res.json()["data"]
-    assert "emotions" in res.json()["data"]
+    data = res.json()["data"]
 
-    res_reset = api.post("/api/journal/reset")
-    assert res_reset.status_code == 200
-    assert res_reset.json()["success"] is True
+    # No preloaded stocks: a brand-new account opens an empty journal.
+    assert data["trades"] == []
+    # The tag library is still usable on day one.
+    assert "Breakout" in data["strategies"]
+    assert "Disciplined" in data["emotions"]
+
+    # The demo reset route is gone: nothing serves it any more (404, or 405
+    # when the router matches the prefix but not the method).
+    assert api.post("/api/journal/reset").status_code in (404, 405)
+
+
+def test_trade_instrument_key_is_validated_and_kept(api):
+    payload = {
+        "symbol": "sbin",
+        "instrumentKey": " nse_eq|ine002a01018 ",
+        "side": "BUY",
+        "price": 650.0,
+        "shares": 5,
+    }
+    created = api.post("/api/trades", json=payload)
+    assert created.status_code == 200
+    assert created.json()["data"]["instrumentKey"] == "NSE_EQ|INE002A01018"
+
+    # Without a key the trade is still valid, just not linked to a live price.
+    plain = api.post("/api/trades", json={**payload, "instrumentKey": ""})
+    assert plain.status_code == 200
+    assert plain.json()["data"]["instrumentKey"] is None
+
+    # A bare symbol is not an instrument key.
+    assert api.post("/api/trades", json={**payload, "instrumentKey": "SBIN"}).status_code == 422
 
 
 def test_prices_endpoint_reports_freshness_metadata(api):

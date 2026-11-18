@@ -27,11 +27,15 @@ class MockMarketStreamer(IMarketDataStreamer):
         price_cache.set_price(token, ltp)
 
     def update_subscriptions(self, tokens: list[str]) -> bool:
-        """Mocks have no broker handshake, so the set is just swapped."""
+        """Mocks have no broker handshake, so the set is just swapped.
+
+        Only the five simulated instruments get ticks. An unknown key must stay
+        unquoted (the UI shows "—") rather than be invented at 100.0, which
+        would look exactly like a real price on the dashboard.
+        """
         self.tokens = sorted(set(tokens))
-        for token in self.tokens:
-            self.prices.setdefault(token, 100.0)
-        logger.info(f"[MOCK] Now simulating {len(self.tokens)} instruments.")
+        known = [token for token in self.tokens if token in self.prices]
+        logger.info(f"[MOCK] Now simulating {len(known)} of {len(self.tokens)} requested instruments.")
         return True
 
     def is_connected(self) -> bool:
@@ -44,7 +48,8 @@ class MockMarketStreamer(IMarketDataStreamer):
         mark_status(mode="mock", connected=True)
 
         for token in self.tokens:
-            self.on_tick_received(token, self.prices.get(token, 100.0))
+            if token in self.prices:
+                self.on_tick_received(token, self.prices[token])
 
         while self.running:
             time.sleep(2)

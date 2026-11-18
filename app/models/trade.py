@@ -2,9 +2,30 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime, timezone
 import html
+import re
+
+# Same shape the watchlist accepts (SPEC-MDL-7): trades and the live feed have
+# to agree on what an Upstox instrument key looks like.
+_INSTRUMENT_KEY_RE = re.compile(r"^[A-Z0-9]{2,12}_[A-Z0-9]{2,8}\|[A-Z0-9]{4,20}$")
+_INSTRUMENT_HINT = "instrumentKey must look like NSE_EQ|INE002A01018 (an Upstox instrument key)"
+
+
+def _clean_instrument_key(value: Optional[str]) -> Optional[str]:
+    """Empty means "not linked to a live instrument"; anything else must be a key."""
+    if value is None:
+        return None
+    key = value.strip().upper()
+    if not key:
+        return None
+    if not _INSTRUMENT_KEY_RE.match(key):
+        raise ValueError(_INSTRUMENT_HINT)
+    return key
 
 class TradeCreate(BaseModel):
     symbol: str = Field(..., description="Uppercase symbol ticker e.g. SBIN, AAPL")
+    instrumentKey: Optional[str] = Field(
+        None, description="Optional Upstox key used to stream this trade's live price"
+    )
     side: str = Field("BUY", description="'BUY' or 'SELL'")
     price: float = Field(..., gt=0, description="Entry execution price")
     stopLoss: Optional[float] = Field(None, description="Optional stop loss level")
@@ -23,6 +44,11 @@ class TradeCreate(BaseModel):
     def sanitize_symbol(cls, v: str) -> str:
         return v.strip().upper()
 
+    @field_validator("instrumentKey")
+    @classmethod
+    def validate_instrument_key(cls, v: Optional[str]) -> Optional[str]:
+        return _clean_instrument_key(v)
+
     @field_validator("side")
     @classmethod
     def validate_side(cls, v: str) -> str:
@@ -40,6 +66,7 @@ class TradeCreate(BaseModel):
 
 class TradeUpdate(BaseModel):
     symbol: Optional[str] = None
+    instrumentKey: Optional[str] = None
     side: Optional[str] = None
     price: Optional[float] = None
     stopLoss: Optional[float] = None
@@ -56,6 +83,11 @@ class TradeUpdate(BaseModel):
     @classmethod
     def sanitize_symbol(cls, v: Optional[str]) -> Optional[str]:
         return v.strip().upper() if v else v
+
+    @field_validator("instrumentKey")
+    @classmethod
+    def validate_instrument_key(cls, v: Optional[str]) -> Optional[str]:
+        return _clean_instrument_key(v)
 
     @field_validator("side")
     @classmethod
@@ -83,6 +115,7 @@ class TradeResponse(BaseModel):
     """
     id: str
     symbol: str
+    instrumentKey: Optional[str] = None
     side: str
     price: float
     stopLoss: Optional[float] = None

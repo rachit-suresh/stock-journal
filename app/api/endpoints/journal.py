@@ -31,13 +31,6 @@ async def get_journal(service: JournalService = Depends(get_journal_service)):
         "data": data
     }
 
-@router.post("/journal/reset", response_model=MessageResponse,
-             dependencies=[Depends(mutation_rate_limit)])
-async def reset_journal(service: JournalService = Depends(get_journal_service)):
-    """Reset only the caller's data back to the initial demo state."""
-    await service.reset_to_mock()
-    return {"success": True, "message": "Journal reset to the starter data."}
-
 @router.post("/journal/import", response_model=MessageResponse,
              dependencies=[Depends(mutation_rate_limit)])
 async def import_journal(request: Request, service: JournalService = Depends(get_journal_service)):

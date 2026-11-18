@@ -52,7 +52,7 @@ def test_auth_config_reports_dev_bypass(anon_client, monkeypatch):
 def test_api_requires_bearer_token(anon_client):
     assert anon_client.get("/api/trades").status_code == 401
     assert anon_client.get("/api/prices?tokens=ABC").status_code == 401
-    assert anon_client.post("/api/journal/reset").status_code == 401
+    assert anon_client.get("/api/journal").status_code == 401
 
 
 def test_garbage_token_is_rejected(anon_client):
@@ -217,19 +217,16 @@ def test_owner_scoped_tags_allow_the_same_name_per_account(api):
     assert "Mine" in api.get("/api/strategies").json()["data"]
 
 
-async def test_reset_only_clears_the_callers_journal(api):
+async def test_bulk_import_only_replaces_the_callers_journal(api):
     created = api.post("/api/trades", json=KIND).json()["data"]
     user_a_trades = api.repos["trade"]
 
     install_owner("user-b")
-    api.post("/api/journal/reset")
+    api.post("/api/journal/import", json={"trades": [], "strategies": [], "emotions": []})
 
-    other_ids = [t["id"] for t in api.get("/api/trades").json()["data"]]
-    assert created["id"] not in other_ids
-    # The reset re-seeds the caller's own starter journal, nothing else.
-    assert "trade_1" in other_ids
+    assert api.get("/api/trades").json()["data"] == []
 
-    # user-a's journal was never touched by user-b's reset.
+    # user-a's journal was never touched by user-b's import.
     assert any(t["id"] == created["id"] for t in await user_a_trades.get_all_trades())
 
 
@@ -270,9 +267,9 @@ def test_mutation_rate_limit_returns_429(api, monkeypatch):
 
 # --- Watchlist / subscriptions -------------------------------------------
 
-def test_watchlist_defaults_and_roundtrip(api):
-    default = api.get("/api/watchlist").json()["data"]
-    assert default == settings.get_tokens()
+def test_watchlist_starts_empty_and_roundtrips(api):
+    # No shared default basket: nothing is preloaded for a new account.
+    assert api.get("/api/watchlist").json()["data"] == []
 
     keys = ["NSE_EQ|INE002A01018", "NSE_EQ|INE467I01027"]
     res = api.put("/api/watchlist", json={"keys": keys})

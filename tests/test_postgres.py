@@ -25,7 +25,6 @@ from app.repositories.postgres.watchlist_repository import PostgresWatchlistRepo
 from app.services.journal_service import (
     DEFAULT_EMOTIONS,
     DEFAULT_STRATEGIES,
-    INITIAL_TRADES,
     JournalService,
 )
 
@@ -220,11 +219,11 @@ async def test_reset_replaces_only_the_caller(pool, trades, owner):
     other = PostgresTradeRepository(pool, owner + "-other")
     await other.create_trade({**TRADE, "symbol": "WIPRO"})
 
-    await trades.reset_trades(INITIAL_TRADES)
+    await trades.reset_trades([{**TRADE, "id": "reset-1", "symbol": "TCS"}])
 
-    assert len(await trades.get_all_trades()) == len(INITIAL_TRADES)
-    kept = await trades.get_trade_by_id("trade_1")
-    assert kept["symbol"] == "AAPL"
+    assert [t["symbol"] for t in await trades.get_all_trades()] == ["TCS"]
+    kept = await trades.get_trade_by_id("reset-1")
+    assert kept["symbol"] == "TCS"
     assert [t["symbol"] for t in await other.get_all_trades()] == ["WIPRO"]
 
 
@@ -292,7 +291,7 @@ async def test_watchlist_upserts_one_row_per_owner(pool, owner):
 
 # --- Service --------------------------------------------------------------
 
-async def test_journal_service_seeds_a_new_account_once(pool, owner):
+async def test_journal_service_seeds_tags_but_never_trades(pool, owner):
     service = JournalService(
         PostgresTradeRepository(pool, owner),
         PostgresStrategyRepository(pool, owner),
@@ -300,16 +299,15 @@ async def test_journal_service_seeds_a_new_account_once(pool, owner):
     )
 
     overview = await service.get_journal_overview()
-    assert len(overview["trades"]) == len(INITIAL_TRADES)
+    # A new account is empty: no demo trade may ever appear in a live journal.
+    assert overview["trades"] == []
     assert overview["strategies"] == DEFAULT_STRATEGIES
     assert overview["emotions"] == DEFAULT_EMOTIONS
 
-    # A second read is a no-op: seeding must not duplicate the journal.
+    # A second read is a no-op: tag seeding must not duplicate the library.
     again = await service.get_journal_overview()
-    assert len(again["trades"]) == len(INITIAL_TRADES)
-
-    await service.reset_to_mock()
-    assert len((await service.get_journal_overview())["trades"]) == len(INITIAL_TRADES)
+    assert again["trades"] == []
+    assert again["strategies"] == DEFAULT_STRATEGIES
 
 
 async def test_pool_surfaces_an_unreachable_database():

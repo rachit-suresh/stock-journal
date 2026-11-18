@@ -1,6 +1,5 @@
 import asyncpg
 from fastapi import APIRouter, Depends
-from app.core.config import settings
 from app.core.database import get_pool
 from app.core.limits import mutation_rate_limit
 from app.core.security import UserContext, get_current_user
@@ -17,8 +16,8 @@ def get_watchlist_repo(
     return PostgresWatchlistRepository(pool, user.user_id)
 
 def _effective_keys(stored: list[str]) -> list[str]:
-    """An account that never saved one sees the shared default basket."""
-    return stored if stored else settings.get_tokens()
+    """No shared default basket: an account only ever streams its own picks."""
+    return list(stored)
 
 @router.get("/watchlist", response_model=WatchlistResponse)
 async def get_watchlist(
