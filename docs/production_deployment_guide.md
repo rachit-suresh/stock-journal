@@ -99,7 +99,7 @@ This release removes both: `motor` and `pymongo` are gone from `requirements.txt
 
 Before pushing to production, verify all pre-flight checks:
 
-- [x] **Dependencies Cleaned**: `requirements.txt` contains the production stack (`fastapi`, `uvicorn`, `asyncpg`, `upstox-python-sdk`, `websocket-client`, `PyJWT[crypto]`, `pytest`, `pytest-asyncio`, `httpx`). `motor` and `pymongo` are gone.
+- [x] **Dependencies Cleaned**: `requirements.txt` contains the production stack only (`fastapi`, `uvicorn`, `asyncpg`, `upstox-python-sdk`, `websocket-client`, `PyJWT[crypto]`, `pytest`, `pytest-asyncio`, `httpx`). `motor` and `pymongo` are gone, and `pgserver` lives in `requirements-dev.txt` because Render's default Python is newer than the package's wheels.
 - [x] **Python Package Initialization**: `__init__.py` markers present in all subpackages in `app/` and `tests/`.
 - [x] **Automated Test Suite**: `python -m pytest -q` → **78 passed** (auth, tenancy, caps, watchlist, streaming, repositories, API, plus 14 Postgres integration tests against a real server).
 - [x] **Environment Secrets Ignored**: `.gitignore` excludes `.env`, `.pytest_cache/`, `__pycache__/`, `.venv/` and the throwaway `.pgtest/` cluster.

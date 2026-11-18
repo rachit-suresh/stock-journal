@@ -188,7 +188,7 @@ Each module owns its own dependency factory that *instantiates* a repository fro
 - Empirical state in this workspace: **78 tests pass** (`python -m pytest -q`), 14 of them against a real Postgres.
 
 ### M13 — Build / Deploy Config
-- `requirements.txt` - unpinned: `fastapi`, `uvicorn`, `upstox-python-sdk`, `python-dotenv`, `websocket-client`, `asyncpg`, `PyJWT[crypto]`, `pytest`, `pytest-asyncio`, `httpx`, `pgserver` (`motor`/`pymongo` are gone).
+- `requirements.txt` - unpinned, **production only**: `fastapi`, `uvicorn`, `upstox-python-sdk`, `python-dotenv`, `websocket-client`, `asyncpg`, `PyJWT[crypto]`, `pytest`, `pytest-asyncio`, `httpx` (`motor`/`pymongo` are gone). `requirements-dev.txt` adds `pgserver` on top for the Postgres tests - it is kept out of the deploy because Render's default Python outran the package's wheels.
 - `vercel.json` - `cleanUrls`, rewrites `/api/:path*` **and** `/auth/config` → `https://stock-journal-xenm.onrender.com/...`, and `/(.*)` → `/static/$1` (Vercel only hosts the UI; the API host is also set in `index.html`). `/auth/config` needs its own rule because it does not live under `/api`.
 - `.gitignore` - `.env`, caches, venvs, `.pgtest/` (the pgserver data directory), `journal_db.json` (a leftover from the pre-Mongo JSON store).
 
@@ -290,7 +290,7 @@ Clear: `clearAll()` → `POST /api/journal/import` with `trades: []` but the cur
 ## 8. Test Map (what to run)
 
 ```powershell
-pip install -r requirements.txt                      # includes asyncpg, PyJWT[crypto] and pgserver
+pip install -r requirements-dev.txt                  # app deps + pgserver for the Postgres tests
 python -m pytest -q                                  # full suite: 78 tests
 python -m pytest tests/test_postgres.py -q           # real Postgres only (pgserver, no network)
 python -m pytest tests/test_auth.py -q               # auth + tenancy contract only

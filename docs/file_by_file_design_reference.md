@@ -90,7 +90,8 @@ stock-journal/
 ├── .gitignore                      # Git exclusion rules (.env, __pycache__, .pytest_cache, .pgtest)
 ├── main.py                         # FastAPI application entrypoint & Lifespan startup
 ├── pytest.ini                      # Pytest configuration (`asyncio_mode = auto`)
-├── requirements.txt                # Python package dependency manifest (asyncpg, no motor/pymongo)
+├── requirements.txt                # Production dependency manifest (asyncpg, no motor/pymongo)
+├── requirements-dev.txt            # `-r requirements.txt` + pgserver, for the local Postgres tests
 └── vercel.json                     # Vercel deployment spec & /api/* + /auth/config proxy rewrites
 ```
 

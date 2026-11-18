@@ -8,5 +8,5 @@ PyJWT[crypto]>=2.8
 pytest
 pytest-asyncio
 httpx
-# Boots a throwaway PostgreSQL 16 for tests/test_postgres.py (no server needed)
-pgserver
+# Test-only extras (pgserver) live in requirements-dev.txt: pgserver ships no
+# wheel for the newest Python versions, and the deploy never runs the tests.

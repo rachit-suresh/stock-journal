@@ -3,8 +3,9 @@
 These run against a real PostgreSQL instance, because the behaviour under
 test is SQL: jsonb merge semantics, the partial-clear rule, ON CONFLICT
 de-duplication, cascade updates and the reset transaction. A throwaway
-cluster is started with the `pgserver` package; without it (or with
-TEST_DATABASE_URL pointing at an existing database) the module skips.
+cluster is started with the `pgserver` package (see requirements-dev.txt);
+without it (or with TEST_DATABASE_URL pointing at an existing database) the
+module skips.
 """
 
 import atexit
@@ -50,7 +51,7 @@ def database_uri():
         return explicit
 
     pgserver = pytest.importorskip(
-        "pgserver", reason="install pgserver or set TEST_DATABASE_URL"
+        "pgserver", reason="pip install -r requirements-dev.txt or set TEST_DATABASE_URL"
     )
     data_dir = Path(__file__).resolve().parent.parent / ".pgtest"
     server = pgserver.get_server(str(data_dir), cleanup_mode="stop")

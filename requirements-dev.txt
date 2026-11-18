@@ -1,0 +1,7 @@
+# Local development and tests. Production installs requirements.txt only.
+-r requirements.txt
+
+# Boots a throwaway PostgreSQL 16 for tests/test_postgres.py, so the SQL
+# contracts run without a database server. Publishing lags the newest Python
+# releases; on 3.14 install it in a 3.12/3.13 venv or set TEST_DATABASE_URL.
+pgserver
