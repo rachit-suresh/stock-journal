@@ -64,7 +64,7 @@ STREAMER_SYNC_SECONDS=15
 
 #### Frontend (Vercel)
 
-**No environment variables are required, and no key is stored in the HTML.** Vercel only serves `static/` as-is — there is no build step, so Vercel env vars are never injected into the pages. Instead, `static/auth.js` calls `GET /auth/config` on the backend (via the `/api/*` rewrite, so it is the Render deployment) and receives
+**No environment variables are required, and no key is stored in the HTML.** Vercel only serves `static/` as-is — there is no build step, so Vercel env vars are never injected into the pages. Instead, `static/auth.js` calls `GET /auth/config` on the backend (`vercel.json` rewrites that path, as well as `/api/*`, to the Render deployment) and receives
 
 ```json
 { "provider": "supabase", "url": "https://<ref>.supabase.co", "anonKey": "<anon public key>" }
