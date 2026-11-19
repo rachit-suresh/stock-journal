@@ -1,12 +1,13 @@
 # Stock Journal — System Specification
 
-- **Version:** 1.7
+- **Version:** 1.8
 - **Baseline compiled:** 2026-11-03, from the code (authoritative) and `docs/*.md` (context)
 - **Revised:** 2026-11-17 — GAP decisions recorded in §11 (GAP-1b, GAP-3b, GAP-5b, GAP-6a, GAP-8b)
 - **Revised:** 2026-11-18 — v1.2: Upstox **Analytics token** replaces the daily-OAuth-token model (GAP-7 closed). v1.3: public site with open signup — Clerk identity + owner-scoped data added as §10. v1.4: §10 **implemented** (Clerk JWT verification, `owner_id` tenancy, per-user watchlist GAP-9b, abuse caps GAP-10b), GAP-11 closed as not applicable (no live data yet)
 - **Revised:** 2026-11-18 — v1.5: **Supabase** replaces both MongoDB (now Supabase Postgres via `asyncpg`, §6) and Clerk (now Supabase Auth, email + password, §10). Public `GET /auth/config` added (SPEC-API-12) so every deployment value lives in Render env vars. Rationale in `docs/design_decisions_and_tradeoffs.md` §12
 - **Revised:** 2026-11-18 — v1.6: **no demo content in a live journal.** The 9 seed trades, `static/mockData.js`, the six demo watchlist tickers and the shared default-basket hand-out are removed, `/api/journal/reset` no longer exists, trades may carry an `instrumentKey`, money is rendered in ₹ (`en-IN`), and a Help-button walkthrough replaces learning-by-sample-data. Rationale in §8 (SPEC-FE-14/15) and AUDIT.md v1.6
 - **Revised:** 2026-11-18 — v1.7: **no invented capital.** The hardcoded `startingBalance = 100000` is gone, so the dashboard's first card is Portfolio Value (what the open book is worth now, ₹0.00 when flat) and the chart is Cumulative Realized P&L starting at ₹0. A-042
+- **Revised:** 2026-11-19 — v1.8: **visual identity.** The sign-in gate becomes an Indian truck-art signboard, the authenticated shell becomes a light warm-paper surface with a grain overlay, green/red are reserved for P&L and BUY/SELL with brown chrome everywhere else, and the `SJ` brand tile is removed (wordmark only). SPEC-FE-17, A-044
 - **Governance:** this file is the source of truth. The process for changing it lives in `.qoder/rules/spec-driven-development.md`; every change is logged in `AUDIT.md`.
 - **Reading the IDs:** requirements are `SPEC-<AREA>-<n>` (CFG config, MDL models, API endpoints, SVC service, PER persistence, MKT market data, FE frontend, AUTH identity/tenancy, NF non-functional). Items listed in §11 are open spec questions (`GAP-*`) and are **user decisions**, not code tasks.
 
@@ -161,6 +162,7 @@
 - **SPEC-FE-14** Money is Indian rupees everywhere: `Intl.NumberFormat('en-IN', {style:'currency', currency:'INR'})` (`₹1,00,000.00`) for values, `notation:'compact'` for chart ticks (`₹1.2L`). No USD symbol or en-US grouping remains in the UI; the server stores unitless floats and Upstox already delivers rupees (SPEC-MKT-6).
 - **SPEC-FE-15** A 6-step walkthrough explains the flow (everything is yours → add stocks → record a trade → tag the psychology → review → read the feed badge) and offers two actions, "Open my watchlist" and "Record my first trade", dispatched as `sj:tour-action`. It opens **only** from the sidebar's "Walkthrough & Help" button: no first-run auto-open and no per-account seen flag (user decision 2026-11-18). `static/onboarding.js` keeps no state.
 - **SPEC-FE-16** A failed server write is never silent: `pushOrFail()` in `static/state.js` treats a non-2xx response as a failure and dispatches `sj:sync-error`, which raises a danger toast ("The server did not save this trade: it only exists in this browser."). The optimistic local write stands until the next successful sync.
+- **SPEC-FE-17** Visual system (v1.8, A-044). The sign-in gate is an Indian truck-art signboard: a teal enamel ground with diagonal chevrons, and a cream card carrying a three-ring painted frame, a flower frieze along its top and bottom edges, the wordmark in Yatra One and a marigold signboard button with a hard offset shadow. The ornaments are presentation only — the gate's behaviour is unchanged (SPEC-AUTH-4). The authenticated shell is a light theme: warm-paper `--bg-main`, cream cards, brown chrome (navigation, buttons, badges, pills, both charts), and a fixed `feTurbulence` grain overlay composited over the page. `--color-success` (green) and `--color-danger` (red) are reserved for profit/loss figures and BUY/SELL semantics; they are never used as decoration. There is no brand tile: the sidebar shows the `StockJournal` wordmark alone.
 
 ---
 

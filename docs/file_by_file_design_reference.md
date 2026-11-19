@@ -75,7 +75,7 @@ stock-journal/
 │   ├── marketFeed.js               # Instrument-key driven price polling engine (watchlist + positions)
 │   ├── onboarding.js               # 6-step walkthrough behind the "Walkthrough & Help" button
 │   ├── state.js                    # Client StateManager & portfolio metrics calculator (RESTful calls)
-│   └── styles.css                  # Custom CSS styling with dark glassmorphism design system
+│   └── styles.css                  # Custom CSS: truck-art sign-in gate + light paper interior with grain (v1.8)
 ├── tests/
 │   ├── __init__.py                 # Tests package marker
 │   ├── conftest.py                 # In-memory owner fixtures (api, anon_client)

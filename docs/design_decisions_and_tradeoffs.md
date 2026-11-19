@@ -479,7 +479,33 @@ Revisit trigger: the operator wants account-level equity, or position sizing as 
 
 ---
 
-## 14. Technical Glossary
+## 14. Visual Identity: Truck-Art Gate, Light Paper Interior (v1.8)
+
+### 14.1 Finding
+
+The shell was built as dark glassmorphism: near-black `--bg-main`, translucent cards with `backdrop-filter: blur(16px)`, violet accent and blue/violet charts. That reads as a developer dashboard, not as a trading journal a family member would keep open in daylight. The operator asked for an Indian truck-art sign-in page and a light interior — white paper with a gritty texture, green/red kept for profit and loss, everything else in shades of brown.
+
+### 14.2 Decision
+
+Two visual languages, one system. The **gate** is a truck-art signboard — teal enamel with diagonal chevrons, a cream card with a three-ring painted frame, flower friezes, the wordmark in Yatra One, a marigold button with a hard offset shadow — and it is ornament only; the auth behaviour is untouched. The **interior** is light: warm-paper ground, cream cards, brown chrome (navigation, buttons, badges, both charts), and a fixed grain overlay (SVG `feTurbulence` plus a 4px dot speckle, `mix-blend-mode: multiply`) so a flat `#fff` never appears. `--color-success` and `--color-danger` are contractually reserved for P&L figures, position rows and BUY/SELL; every other accent uses the brown ramp or the `--truck-*` palette (gate only). The `SJ` brand tile is gone: the sidebar is the wordmark alone. Recorded as SPEC-FE-17 and AUDIT A-044.
+
+### 14.3 Rejected alternatives
+
+- **Re-skin the dark theme instead of inverting it.** Cheaper, but the request was explicitly a light interior; a dimmed truck-art gate over a dark shell would have been two themes fighting.
+- **Truck art throughout.** Maximalist ornament on the dashboard competes with the numbers — it is the reason the gate is allowed the saturated palette and the interior is not.
+- **A texture image asset.** A PNG texture adds a request, a cache entry and a fixed resolution; the same grit as an inline SVG data URI in a token costs nothing and scales to any DPI.
+- **Keeping the brand tile, recoloured.** The operator rejected the mark itself, not its colour.
+
+### 14.4 Consequences
+
+- Colour discipline is now a rule, not a preference: green/red on a button would misread as a P&L signal.
+- The grain overlay is a fixed `body::after` at `z-index: 60`; new layers that must float above the texture need a higher index (modals 100, toasts 1000 already do).
+- Fonts now load Yatra One alongside Outfit; it is used by the gate wordmark only.
+- Future themes should change tokens, not literals: the v1.8 conversion only worked in place because the leftovers could be counted (21 hex literals, 58 `rgba()` overlays).
+
+---
+
+## 15. Technical Glossary
 
 * **LTP (Last Traded Price):** The execution price of the most recent transaction on the exchange matching engine.
 * **SWR (Stale-While-Revalidate):** An HTTP cache invalidation strategy defined in RFC 5861 that returns cached data immediately while asynchronously revalidating in the background.
