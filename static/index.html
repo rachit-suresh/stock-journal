@@ -15,7 +15,7 @@
       (LOCAL_HOSTS.includes(window.location.hostname) ? "" : "https://stock-journal-xenm.onrender.com");
   </script>
   <!-- Google Fonts & Stylesheets -->
-  <link rel="stylesheet" href="styles.css?v=2.16">
+  <link rel="stylesheet" href="styles.css?v=2.21">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -24,7 +24,6 @@
   <!-- SIGN-IN GATE: hidden by auth.js once a Supabase session exists -->
   <div class="auth-gate" id="auth-gate">
     <div class="auth-card">
-      <div class="brand-icon">SJ</div>
       <h1>StockJournal</h1>
       <p class="auth-subtitle" id="auth-subtitle">Sign in to open your trading journal.</p>
       <!-- Email + password against Supabase Auth (auth.js). -->
@@ -51,7 +50,6 @@
     <!-- SIDEBAR -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="brand-icon">SJ</div>
         <span class="brand-name">StockJournal</span>
       </div>
       
@@ -628,13 +626,13 @@
         
         <div class="form-group" style="margin-top: 20px; margin-bottom: 0;">
           <label>Journal Notes / Analysis</label>
-          <div id="detail-notes" style="background-color: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 16px; min-height: 100px; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">-</div>
+          <div id="detail-notes" style="background-color: var(--surface-1); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 16px; min-height: 100px; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">-</div>
         </div>
       </div>
       
       <div class="modal-footer">
         <button class="btn btn-secondary" id="btn-detail-close">Close</button>
-        <button class="btn btn-secondary" id="btn-detail-delete" style="border-color: rgba(244,63,94,0.3); color: var(--color-danger);">Delete Trade</button>
+        <button class="btn btn-secondary" id="btn-detail-delete" style="border-color: rgba(176,42,31,0.32); color: var(--color-danger);">Delete Trade</button>
         <button class="btn btn-primary" id="btn-detail-edit">Edit Entry</button>
       </div>
     </div>
@@ -667,6 +665,6 @@
   </div>
 
   <!-- Main Application Orchestrator Script -->
-  <script type="module" src="app.js?v=2.16"></script>
+  <script type="module" src="app.js?v=2.21"></script>
 </body>
 </html>

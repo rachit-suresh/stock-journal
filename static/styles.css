@@ -1,42 +1,60 @@
 /* ==========================================================================
    DESIGN SYSTEM & VARIABLES
    ========================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Yatra+One&display=swap');
 
 :root {
-  /* Theme Colors */
-  --bg-main: #060913;
-  --bg-sidebar: #0b0f19;
-  --bg-card: rgba(17, 24, 39, 0.65);
-  --bg-card-hover: rgba(28, 36, 56, 0.75);
-  --border-color: rgba(255, 255, 255, 0.06);
-  --border-color-hover: rgba(255, 255, 255, 0.12);
-  
-  /* Accent Colors */
-  --color-primary: #8b5cf6; /* Indigo-purple */
-  --color-primary-glow: rgba(139, 92, 246, 0.25);
-  --color-secondary: #3b82f6; /* Blue */
-  
-  /* Status Colors */
-  --color-success: #10b981; /* Neon Emerald */
-  --color-success-bg: rgba(16, 185, 129, 0.1);
-  --color-success-glow: rgba(16, 185, 129, 0.2);
-  
-  --color-danger: #f43f5e; /* Neon Rose */
-  --color-danger-bg: rgba(244, 63, 94, 0.1);
-  --color-danger-glow: rgba(244, 63, 94, 0.2);
-  
-  --color-warning: #f59e0b; /* Amber */
-  --color-warning-bg: rgba(245, 158, 11, 0.1);
-  
-  /* Text Colors */
-  --text-main: #f3f4f6;
-  --text-muted: #9ca3af;
-  --text-dark: #6b7280;
+  /* Paper & ink — a light, brown-led palette printed on warm stock */
+  --bg-main: #f4ecdd;
+  --bg-sidebar: #ecdfc9;
+  --bg-card: #fffdf8;
+  --bg-card-hover: #fff7ea;
+  --border-color: rgba(92, 58, 26, 0.16);
+  --border-color-hover: rgba(92, 58, 26, 0.34);
+
+  /* Chrome: leather to clay. Nothing structural borrows green or red. */
+  --color-primary: #8a4f1d; /* Leather brown */
+  --color-primary-glow: rgba(138, 79, 29, 0.18);
+  --color-secondary: #b6793f; /* Caramel */
+
+  /* Profit and loss own green and red outright (SPEC-FE-4) */
+  --color-success: #1c7a3c;
+  --color-success-bg: rgba(28, 122, 60, 0.10);
+  --color-success-glow: rgba(28, 122, 60, 0.16);
+
+  --color-danger: #b02a1f;
+  --color-danger-bg: rgba(176, 42, 31, 0.09);
+  --color-danger-glow: rgba(176, 42, 31, 0.16);
+
+  --color-warning: #a25c11;
+  --color-warning-bg: rgba(162, 92, 17, 0.12);
+
+  /* Text: coffee, never pure black */
+  --text-main: #2a1c11;
+  --text-muted: #6f5540;
+  --text-dark: #8a6f57;
+
+  /* Tinted surfaces — the light-mode stand-in for translucent white */
+  --surface-1: rgba(92, 58, 26, 0.035);
+  --surface-2: rgba(92, 58, 26, 0.06);
+  --surface-3: rgba(92, 58, 26, 0.10);
+  --surface-4: rgba(92, 58, 26, 0.16);
+
+  /* Truck-art enamel; only the sign-in gate paints with these */
+  --truck-teal: #0d4a45;
+  --truck-teal-deep: #062a27;
+  --truck-marigold: #f5b942;
+  --truck-saffron: #e07a1f;
+  --truck-rose: #c2334d;
+  --truck-cream: #fdf1d8;
+
+  /* One noise tile, blended over everything for the gritty paper finish */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.45'/%3E%3C/svg%3E");
 
   /* Fonts */
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Yatra One', 'Outfit', serif;
 
   /* Layout Constants */
   --sidebar-width: 260px;
@@ -63,10 +81,28 @@ html, body {
   width: 100%;
   height: 100%;
   background-color: var(--bg-main);
+  background-image: radial-gradient(1100px 520px at 50% -12%, #fffaef, transparent 72%);
   color: var(--text-main);
   font-family: var(--font-sans);
   overflow: hidden;
+  color-scheme: light;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Grit: the app is printed on one sheet of slightly dirty paper. The layer
+   covers the UI, takes no pointer events, and sits under modals and toasts. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background-image:
+    var(--grain),
+    radial-gradient(rgba(74, 46, 20, 0.55) 0.5px, transparent 0.7px);
+  background-size: 180px 180px, 4px 4px;
+  opacity: 0.28;
+  mix-blend-mode: multiply;
 }
 
 /* Custom Scrollbar */
@@ -76,16 +112,16 @@ html, body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-main);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-3);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--surface-4);
 }
 
 /* ==========================================================================
@@ -119,24 +155,11 @@ html, body {
   border-bottom: 1px solid var(--border-color);
 }
 
-.brand-icon {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
-  border-radius: var(--border-radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 800;
-  box-shadow: 0 0 15px var(--color-primary-glow);
-}
-
 .brand-name {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  background: linear-gradient(to right, #ffffff, #c7d2fe);
+  background: linear-gradient(to right, #3a2415, #8a4f1d);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -166,13 +189,13 @@ html, body {
 
 .nav-item:hover {
   color: var(--text-main);
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--surface-2);
 }
 
 .nav-item.active {
   color: var(--text-main);
-  background: linear-gradient(to right, rgba(139, 92, 246, 0.15), rgba(59, 130, 246, 0.05));
-  border-color: rgba(139, 92, 246, 0.2);
+  background: linear-gradient(to right, rgba(138, 79, 29, 0.14), rgba(182, 121, 63, 0.05));
+  border-color: rgba(138, 79, 29, 0.22);
 }
 
 .nav-item svg {
@@ -213,8 +236,7 @@ html, body {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border-color);
-  background-color: rgba(11, 15, 25, 0.4);
-  backdrop-filter: blur(10px);
+  background-color: var(--bg-main);
 }
 
 .header-title-section h1 {
@@ -233,7 +255,7 @@ html, body {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: 20px;
   font-size: 13px;
@@ -289,7 +311,7 @@ html, body {
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-lg);
   padding: 24px;
-  backdrop-filter: blur(16px);
+  box-shadow: 0 14px 28px -24px rgba(72, 44, 18, 0.7);
   transition: border-color var(--transition-normal), transform var(--transition-normal);
 }
 
@@ -380,14 +402,14 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
   transition: all var(--transition-fast);
 }
 
 .watchlist-item:hover {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: var(--surface-2);
   border-color: var(--border-color-hover);
 }
 
@@ -445,7 +467,7 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
 }
@@ -511,29 +533,29 @@ html, body {
 .btn-primary {
   background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
   color: white;
-  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 4px 15px rgba(138, 79, 29, 0.28);
 }
 
 .btn-primary:hover {
   opacity: 0.95;
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.45);
+  box-shadow: 0 6px 20px rgba(138, 79, 29, 0.42);
 }
 
 .btn-secondary {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--surface-2);
   border-color: var(--border-color);
   color: var(--text-main);
 }
 
 .btn-secondary:hover {
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--surface-3);
   border-color: var(--border-color-hover);
 }
 
 .btn-danger-outline {
   background-color: transparent;
-  border-color: rgba(244, 63, 94, 0.3);
+  border-color: rgba(176, 42, 31, 0.32);
   color: var(--color-danger);
 }
 
@@ -546,6 +568,13 @@ html, body {
   padding: 6px 12px;
   font-size: 12px;
   border-radius: var(--border-radius-sm);
+}
+
+/* `display: inline-flex` on .btn outranks the UA rule for `hidden`, so the
+   walkthrough's per-step action button painted as an empty pill on steps that
+   have no action. */
+.btn[hidden] {
+  display: none;
 }
 
 /* ==========================================================================
@@ -573,7 +602,7 @@ html, body {
 
 .input-search {
   padding: 10px 16px 10px 40px;
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
   color: var(--text-main);
@@ -586,7 +615,7 @@ html, body {
 
 .input-search:focus {
   border-color: var(--color-primary);
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: #ffffff;
 }
 
 .search-icon-svg {
@@ -602,7 +631,7 @@ html, body {
 
 .filter-select {
   padding: 10px 16px;
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
   color: var(--text-main);
@@ -622,7 +651,7 @@ html, body {
   overflow-x: auto;
   border-radius: var(--border-radius-md);
   border: 1px solid var(--border-color);
-  background-color: rgba(17, 24, 39, 0.3);
+  background-color: var(--surface-1);
 }
 
 .trade-table {
@@ -633,7 +662,7 @@ html, body {
 }
 
 .trade-table th {
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: var(--surface-2);
   padding: 16px 20px;
   font-weight: 600;
   color: var(--text-muted);
@@ -657,7 +686,7 @@ html, body {
 }
 
 .trade-table tbody tr:hover {
-  background-color: rgba(255, 255, 255, 0.015);
+  background-color: var(--surface-1);
 }
 
 .td-mono {
@@ -680,33 +709,33 @@ html, body {
 .badge-buy {
   background-color: var(--color-success-bg);
   color: var(--color-success);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(28, 122, 60, 0.28);
 }
 
 .badge-sell {
   background-color: var(--color-danger-bg);
   color: var(--color-danger);
-  border: 1px solid rgba(244, 63, 94, 0.2);
+  border: 1px solid rgba(176, 42, 31, 0.26);
 }
 
 .badge-strategy {
-  background-color: rgba(139, 92, 246, 0.08);
-  color: #c084fc;
-  border: 1px solid rgba(139, 92, 246, 0.15);
+  background-color: rgba(138, 79, 29, 0.10);
+  color: #7a4415;
+  border: 1px solid rgba(138, 79, 29, 0.24);
 }
 
 .badge-emotion {
-  background-color: rgba(59, 130, 246, 0.08);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.15);
+  background-color: rgba(182, 121, 63, 0.14);
+  color: #6b4218;
+  border: 1px solid rgba(182, 121, 63, 0.34);
 }
 
 .tag-mistake {
   display: inline-flex;
   padding: 2px 6px;
-  background-color: rgba(245, 158, 11, 0.08);
-  color: #fbd38d;
-  border: 1px solid rgba(245, 158, 11, 0.15);
+  background-color: rgba(162, 92, 17, 0.10);
+  color: #8a5a25;
+  border: 1px solid rgba(162, 92, 17, 0.22);
   font-size: 11px;
   border-radius: 4px;
   margin-right: 4px;
@@ -714,7 +743,7 @@ html, body {
 }
 
 .tag-mistake-none {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: var(--surface-2);
   color: var(--text-muted);
   border: 1px solid var(--border-color);
 }
@@ -775,7 +804,7 @@ html, body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(3, 7, 18, 0.7);
+  background-color: rgba(42, 28, 17, 0.55);
   backdrop-filter: blur(8px);
   z-index: 100;
   display: none;
@@ -793,10 +822,10 @@ html, body {
 .modal-container {
   width: 100%;
   max-width: 580px;
-  background-color: #0d1321;
+  background-color: var(--bg-card);
   border: 1px solid var(--border-color-hover);
   border-radius: var(--border-radius-lg);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 24px 60px -24px rgba(60, 38, 16, 0.55);
   overflow: hidden;
   transform: translateY(20px) scale(0.95);
   transition: transform var(--transition-normal);
@@ -847,7 +876,7 @@ html, body {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  background-color: rgba(0, 0, 0, 0.15);
+  background-color: var(--surface-1);
 }
 
 /* Forms */
@@ -873,7 +902,7 @@ html, body {
 
 .form-input, .form-select, .form-textarea {
   padding: 10px 14px;
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-md);
   color: var(--text-main);
@@ -885,11 +914,11 @@ html, body {
 
 .form-input:focus, .form-select:focus, .form-textarea:focus {
   border-color: var(--color-primary);
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: #ffffff;
 }
 
 .form-select option, .filter-select option {
-  background-color: #0d1321;
+  background-color: var(--bg-card);
   color: var(--text-main);
 }
 
@@ -909,7 +938,7 @@ html, body {
 
 .pill-option {
   padding: 6px 12px;
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: var(--surface-1);
   border: 1px solid var(--border-color);
   border-radius: 20px;
   font-size: 13px;
@@ -919,13 +948,13 @@ html, body {
 }
 
 .pill-option:hover {
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: var(--surface-3);
 }
 
 .pill-option.selected {
-  background-color: rgba(139, 92, 246, 0.15);
+  background-color: rgba(138, 79, 29, 0.16);
   border-color: var(--color-primary);
-  color: #c084fc;
+  color: #7a4415;
 }
 
 /* ==========================================================================
@@ -942,7 +971,7 @@ html, body {
 }
 
 .toast {
-  background-color: #0b0f19;
+  background-color: var(--bg-card);
   border-left: 4px solid var(--color-primary);
   border-top: 1px solid var(--border-color-hover);
   border-right: 1px solid var(--border-color-hover);
@@ -952,7 +981,7 @@ html, body {
   color: var(--text-main);
   font-size: 14px;
   font-weight: 500;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 5px 15px rgba(60, 38, 16, 0.22);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -993,7 +1022,7 @@ html, body {
 }
 
 .clickable-row:hover {
-  background-color: rgba(255, 255, 255, 0.03) !important;
+  background-color: var(--surface-2) !important;
 }
 
 .clickable-row td:last-child {
@@ -1025,20 +1054,25 @@ html, body {
 
 /* ==========================================================================
    SIGN-IN GATE (shown until a Supabase session exists)
+
+   Painted like the back of a highway truck: teal enamel under marigold
+   scallops, a rose band of cream studs along the floor, and a cream panel
+   carrying the form. Everything inside the panel stays legible and calm.
    ========================================================================== */
 .auth-gate {
   position: fixed;
   inset: 0;
   z-index: 300;
   display: none;
-  padding: 24px;
-  /* The Clerk widget is taller than a short phone viewport, so the gate has to
-     scroll; the card's `margin: auto` keeps it centred when it does fit. */
+  padding: 32px 24px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(139, 92, 246, 0.18), transparent 60%),
-    var(--bg-main);
+  background-color: var(--truck-teal-deep);
+  background-image:
+    radial-gradient(900px 420px at 50% -8%, rgba(245, 185, 66, 0.22), transparent 70%),
+    repeating-linear-gradient(45deg, rgba(245, 185, 66, 0.09) 0 14px, transparent 14px 28px),
+    repeating-linear-gradient(-45deg, rgba(194, 51, 77, 0.09) 0 14px, transparent 14px 28px),
+    linear-gradient(180deg, #10524c 0%, #0a3d39 58%, #052523 100%);
 }
 
 body.auth-locked .auth-gate {
@@ -1054,8 +1088,10 @@ body.auth-locked .app-container {
 }
 
 .auth-card {
+  position: relative;
+  z-index: 302;
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   /* Auto margins centre the card inside the scrolling gate without clipping
      its top edge once the content is taller than the viewport. */
   margin: auto;
@@ -1063,24 +1099,66 @@ body.auth-locked .app-container {
   flex-direction: column;
   align-items: center;
   gap: 14px;
-  padding: 32px 28px;
-  background-color: var(--bg-card);
-  border: 1px solid var(--border-color-hover);
-  border-radius: var(--border-radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(16px);
+  /* Top and bottom padding leave the two friezes their own band. */
+  padding: 52px 30px 46px;
+  /* Cream enamel: grain, painted flower friezes top and bottom, a warm halo,
+     and three rings of signwriter's enamel around the outside. */
+  background-color: var(--truck-cream);
+  background-image:
+    var(--grain),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20' viewBox='0 0 40 20'%3E%3Ccircle cx='20' cy='10' r='5.5' fill='%23f5b942' stroke='%230d4a45' stroke-width='1.2'/%3E%3Ccircle cx='20' cy='10' r='1.8' fill='%23c2334d'/%3E%3Cpath d='M4 10c3-4 8-4 10 0M36 10c-3-4-8-4-10 0' fill='none' stroke='%230d4a45' stroke-width='1.2'/%3E%3Ccircle cx='4' cy='10' r='1.6' fill='%23c2334d'/%3E%3Ccircle cx='36' cy='10' r='1.6' fill='%23c2334d'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='20' viewBox='0 0 40 20'%3E%3Ccircle cx='20' cy='10' r='5.5' fill='%23f5b942' stroke='%230d4a45' stroke-width='1.2'/%3E%3Ccircle cx='20' cy='10' r='1.8' fill='%23c2334d'/%3E%3Cpath d='M4 10c3-4 8-4 10 0M36 10c-3-4-8-4-10 0' fill='none' stroke='%230d4a45' stroke-width='1.2'/%3E%3Ccircle cx='4' cy='10' r='1.6' fill='%23c2334d'/%3E%3Ccircle cx='36' cy='10' r='1.6' fill='%23c2334d'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 50% -20%, rgba(224, 122, 31, 0.20), transparent 62%);
+  background-size: 180px 180px, 40px 20px, 40px 20px, auto;
+  background-position: 0 0, center 13px, center calc(100% - 13px), 0 0;
+  background-repeat: repeat, repeat-x, repeat-x, no-repeat;
+  border: 4px solid var(--truck-teal);
+  border-radius: 22px;
+  box-shadow:
+    0 0 0 5px var(--truck-marigold),
+    0 0 0 9px var(--truck-rose),
+    0 0 0 11px var(--truck-teal),
+    0 30px 70px -20px rgba(0, 0, 0, 0.65);
   text-align: center;
 }
 
-.auth-card h1 {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
+/* Hand-lettered inner rule, set clear of the friezes and the text. */
+.auth-card::before {
+  content: "";
+  position: absolute;
+  inset: 44px 16px;
+  border-left: 1px solid rgba(13, 74, 69, 0.18);
+  border-right: 1px solid rgba(13, 74, 69, 0.18);
+  border-radius: 6px;
+  pointer-events: none;
 }
 
-.auth-subtitle {
+.auth-card h1 {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  color: var(--truck-teal);
+  text-shadow: 1px 1px 0 var(--truck-marigold), 2px 2px 0 rgba(194, 51, 77, 0.45);
+}
+
+/* Painted diamonds beneath the wordmark. */
+.auth-card h1::after {
+  content: "◆ ◆ ◆";
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  letter-spacing: 6px;
+  color: var(--truck-saffron);
+  text-shadow: none;
+}
+
+.auth-card .auth-subtitle {
   font-size: 13px;
-  color: var(--text-muted);
+  font-weight: 500;
+  color: #6b4218;
 }
 
 /* Email + password form, swapped between sign-in and sign-up by auth.js. */
@@ -1105,34 +1183,61 @@ body.auth-locked .app-container {
   text-align: left;
 }
 
-.auth-field span {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
+.auth-card .auth-field span {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--truck-teal);
 }
 
-.auth-field input {
+.auth-card .auth-field input {
   width: 100%;
-  padding: 11px 14px;
+  padding: 12px 14px;
   font-family: var(--font-sans);
-  font-size: 14px;
-  color: var(--text-main);
-  background-color: var(--bg-main);
-  border: 1px solid var(--border-color-hover);
-  border-radius: var(--border-radius-md);
+  font-size: 15px;
+  color: #2a1c11;
+  background-color: #fffaf0;
+  border: 2px solid #c9a267;
+  border-radius: 10px;
   outline: none;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.auth-field input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-glow);
+.auth-card .auth-field input:focus {
+  border-color: var(--truck-teal);
+  box-shadow: 0 0 0 3px rgba(245, 185, 66, 0.55);
 }
 
 .auth-submit {
   width: 100%;
   justify-content: center;
-  padding: 11px 16px;
+  padding: 13px 16px;
+}
+
+/* Painted signboard button: marigold enamel, hard teal shadow. */
+.auth-card .auth-submit {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #3a1d05;
+  background: linear-gradient(180deg, #ffd06b, var(--truck-marigold));
+  border: 2px solid var(--truck-teal);
+  border-radius: 999px;
+  box-shadow: 4px 4px 0 var(--truck-teal);
+}
+
+.auth-card .auth-submit:hover:not(:disabled) {
+  opacity: 1;
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 var(--truck-teal);
+}
+
+.auth-card .auth-submit:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--truck-teal);
 }
 
 .auth-submit:disabled {
@@ -1153,8 +1258,18 @@ body.auth-locked .app-container {
   text-underline-offset: 2px;
 }
 
+.auth-card .auth-link {
+  font-weight: 600;
+  color: var(--truck-teal);
+  text-decoration-color: var(--truck-saffron);
+}
+
 .auth-link:hover {
   color: var(--text-main);
+}
+
+.auth-card .auth-link:hover {
+  color: var(--truck-rose);
 }
 
 .auth-note {
@@ -1165,6 +1280,10 @@ body.auth-locked .app-container {
   min-height: 16px;
   line-height: 1.5;
   text-align: center;
+}
+
+.auth-card .auth-note {
+  color: #6b4218;
 }
 
 /* ==========================================================================
@@ -1276,8 +1395,7 @@ body.auth-locked .app-container {
     height: auto;
     border-right: none;
     border-bottom: 1px solid var(--border-color);
-    background-color: rgba(11, 15, 25, 0.98);
-    backdrop-filter: blur(12px);
+    background-color: var(--bg-sidebar);
   }
 
   .sidebar-brand {
@@ -1288,12 +1406,6 @@ body.auth-locked .app-container {
 
   .brand-name {
     font-size: 16px;
-  }
-
-  .brand-icon {
-    width: 30px;
-    height: 30px;
-    font-size: 13px;
   }
 
   .sidebar-nav {
@@ -1539,7 +1651,7 @@ body.auth-locked .app-container {
   }
 
   .auth-card {
-    padding: 26px 20px;
+    padding: 52px 20px 46px;
   }
 }
 
@@ -1655,7 +1767,7 @@ body.auth-locked .app-container {
   }
 
   .auth-card {
-    padding: 20px 10px;
+    padding: 46px 14px 42px;
   }
 
   .metrics-grid {

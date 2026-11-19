@@ -130,9 +130,11 @@ function showToast(message, type = 'success') {
 function initCharts(equityData = [], allocationData = []) {
   const equityCtx = document.getElementById('equityChart').getContext('2d');
   
-  const purpleGradient = equityCtx.createLinearGradient(0, 0, 0, 300);
-  purpleGradient.addColorStop(0, 'rgba(139, 92, 246, 0.4)');
-  purpleGradient.addColorStop(1, 'rgba(139, 92, 246, 0.0)');
+  // Leather-brown fill, so the curve reads as ink on the same paper the rest
+  // of the journal is printed on.
+  const brownGradient = equityCtx.createLinearGradient(0, 0, 0, 300);
+  brownGradient.addColorStop(0, 'rgba(138, 79, 29, 0.30)');
+  brownGradient.addColorStop(1, 'rgba(138, 79, 29, 0.0)');
 
   const chartLabels = equityData.map(d => d.date);
   const chartPnL = equityData.map(d => d.pnl);
@@ -145,13 +147,13 @@ function initCharts(equityData = [], allocationData = []) {
       datasets: [{
         label: 'Cumulative realized P&L (₹)',
         data: chartPnL,
-        borderColor: '#8b5cf6',
+        borderColor: '#8a4f1d',
         borderWidth: 3,
-        backgroundColor: purpleGradient,
+        backgroundColor: brownGradient,
         fill: true,
         tension: 0.3,
-        pointBackgroundColor: '#8b5cf6',
-        pointBorderColor: '#ffffff',
+        pointBackgroundColor: '#8a4f1d',
+        pointBorderColor: '#fffdf8',
         pointRadius: 4,
         pointHoverRadius: 6
       }]
@@ -164,10 +166,10 @@ function initCharts(equityData = [], allocationData = []) {
         tooltip: {
           mode: 'index',
           intersect: false,
-          backgroundColor: '#111625',
-          titleColor: '#9ca3af',
-          bodyColor: '#f3f4f6',
-          borderColor: 'rgba(255,255,255,0.08)',
+          backgroundColor: '#2a1c11',
+          titleColor: '#d9c4a6',
+          bodyColor: '#fff8ee',
+          borderColor: 'rgba(255, 248, 238, 0.16)',
           borderWidth: 1,
           callbacks: {
             label: function(context) {
@@ -179,12 +181,12 @@ function initCharts(equityData = [], allocationData = []) {
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: '#6b7280', font: { family: 'Outfit' } }
+          ticks: { color: '#8a6f57', font: { family: 'Outfit' } }
         },
         y: {
-          grid: { color: 'rgba(255, 255, 255, 0.03)' },
-          ticks: { 
-            color: '#6b7280', 
+          grid: { color: 'rgba(92, 58, 26, 0.10)' },
+          ticks: {
+            color: '#8a6f57', 
             font: { family: 'Outfit' },
             callback: value => formatCompactCurrency(value)
           }
@@ -207,7 +209,7 @@ function initCharts(equityData = [], allocationData = []) {
         labels: ['No Active Positions'],
         datasets: [{
           data: [100],
-          backgroundColor: ['rgba(255, 255, 255, 0.05)'],
+          backgroundColor: ['rgba(92, 58, 26, 0.10)'],
           borderWidth: 0
         }]
       },
@@ -217,7 +219,7 @@ function initCharts(equityData = [], allocationData = []) {
         plugins: {
           legend: {
             position: 'bottom',
-            labels: { color: '#9ca3af', font: { family: 'Outfit', size: 12 } }
+            labels: { color: '#6f5540', font: { family: 'Outfit', size: 12 } }
           }
         }
       }
@@ -229,15 +231,16 @@ function initCharts(equityData = [], allocationData = []) {
         labels: allocLabels,
         datasets: [{
           data: allocValues,
+          // All-brown ramp: only P&L is allowed to be green or red.
           backgroundColor: [
-            '#8b5cf6', // Purple
-            '#3b82f6', // Blue
-            '#10b981', // Emerald
-            '#f59e0b', // Amber
-            '#ec4899', // Pink
-            '#14b8a6'  // Teal
+            '#5d3813', // Dark walnut
+            '#8a4f1d', // Leather
+            '#a8681b', // Burnt caramel
+            '#b6793f', // Clay
+            '#c9a267', // Tan
+            '#e0c9a6'  // Sand
           ],
-          borderColor: '#111625',
+          borderColor: '#fffdf8',
           borderWidth: 2
         }]
       },
@@ -247,10 +250,10 @@ function initCharts(equityData = [], allocationData = []) {
         plugins: {
           legend: {
             position: 'bottom',
-            labels: { color: '#9ca3af', font: { family: 'Outfit', size: 12 } }
+            labels: { color: '#6f5540', font: { family: 'Outfit', size: 12 } }
           },
           tooltip: {
-            backgroundColor: '#111625',
+            backgroundColor: '#2a1c11',
             callbacks: {
               label: function(context) {
                 const total = context.dataset.data.reduce((a, b) => a + b, 0);
